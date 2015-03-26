@@ -109,10 +109,14 @@ namespace Trilateration
                             {
                                 index_x = i + range_x;
                                 if (index_x < 0) index_x = 0;
-                                if (index_x > Grid_W) index_x = Grid_W;
+                                //if (index_x > Grid_W) index_x = Grid_W;
+                                //Brian+ for fix arrary index is out of range bug
+                                if (index_x >= Grid_W) index_x = Grid_W - 1;
                                 index_y = j + range_y;
                                 if (index_y < 0) index_y = 0;
-                                if (index_y > Grid_H) index_y = Grid_H;
+                                //if (index_y > Grid_H) index_y = Grid_H;
+                                //Brian+ for fix arrary index is out of range bug
+                                if (index_y >= Grid_H) index_y = Grid_H - 1;
 
                                 // if any obstacle in the safety range, reset this grid as another type of walkability
                                 if (Walkability[index_x, index_y] == 1) Walkability[i, j] = 2;
