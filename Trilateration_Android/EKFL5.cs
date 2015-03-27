@@ -29,6 +29,7 @@ namespace Trilateration
         private int i, j, k;      
         private Single tmpSingle1;
         private position d_move;
+        private Single dt;
 
         // matrix for calculation
         private Single[,] H, HT, Z, hX,Q,R,K;
@@ -55,6 +56,12 @@ namespace Trilateration
         {
             get { return encoder_r; }
             set { encoder_r = value; }
+        }
+
+        public Single dT
+        {
+            get { return dt; }
+            set { dt = value; }
         }
 
         public Single[] AX
@@ -132,12 +139,12 @@ namespace Trilateration
             }
             
             R = new Single[dim, dim];
-            Q = new Single[2, 2]{{0.01f,0f},{0f,0.01f}};  // 0.01
+            Q = new Single[2, 2]{{5f,0f},{0f,5f}};  // 0.01
             for (i = 0; i < dim; i++)
             {
                 for (j = 0; j < dim; j++)
                 {
-                    if (i == j) R[i,j] = 0.3f;  // 0.3
+                    if (i == j) R[i,j] = 10f;  // 0.3
                     else R[i,j] = 0f;
                 }
             }
@@ -349,15 +356,14 @@ namespace Trilateration
             Single DegToRad =(Single)(Math.PI/180);
             Single RadToDeg =(Single)(180/Math.PI);
             Single D = 11.83f;
-            Single piD = (Single)((D * Math.PI) / 60);
-            Single dt = 1f;
+            Single piD = (Single)(D * Math.PI);
             Single VL, VR;
             Single V, W;
 
-            VL = (((left / 6) * piD) / dt);
-            VR = (((right / 6) * piD) / dt);
+            VL = (((left / 12 / 60) * piD) / dt);
+            VR = (((right / 12 / 60) * piD) / dt);
             V = (VL + VR) / 2f;
-            W = (VR - VL) / 22.26f;
+            W = (VL - VR) / 22.26f;
 
             dtheta = W * dt * RadToDeg;
             dx = (Single)((V * dt) * Math.Cos(dtheta * DegToRad));
