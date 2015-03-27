@@ -82,6 +82,8 @@ namespace Trilateration_Android
         public bool loc_on;
         public bool moving;
         public bool testing;
+        public bool sampling;
+        public bool screen_ready;
         public int loc_init_step;
 
         public class_flag()
