@@ -204,6 +204,7 @@ namespace Trilateration_Android
             linearContent.AddView(view);
 
             bool UseWaitCursor = false;
+            buttonCalCompass.Enabled = false;
 
             buttonCalCompass.Click += (sender, e) =>
             {
@@ -220,7 +221,8 @@ namespace Trilateration_Android
                     outbyte[4] = 0x00;
                     outbyte[5] = 0x45;
                     outbytelen = 6;
-                   //drivingPort.Write(outbyte, 0, outbytelen);
+                    Uart2C.SendMsgUart(pic32_open, outbyte);
+                    //drivingPort.Write(outbyte, 0, outbytelen);
                 }
                 else
                 {
@@ -232,6 +234,7 @@ namespace Trilateration_Android
                     outbyte[4] = 0x00;
                     outbyte[5] = 0x45;
                     outbytelen = 6;
+                    Uart2C.SendMsgUart(pic32_open, outbyte);
                     //drivingPort.Write(outbyte, 0, outbytelen);
                 }
             };
@@ -272,21 +275,21 @@ namespace Trilateration_Android
                 if (anchor1.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor1.X * x_scale), (int)(anchor1.Y * y_scale), 5, pen_anchor);
-                    e.DrawCircle((int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), pen_anchor);
+                    //e.DrawCircle((int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), pen_anchor);
                     //C# original function
                     //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), (int)(anchor1.Range * 2 * y_scale));
                 }
                 if (anchor2.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor2.X * x_scale), (int)(anchor2.Y * y_scale), 5, pen_anchor);
-                    e.DrawCircle( (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), pen_anchor);
+                    //e.DrawCircle( (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), pen_anchor);
                     //C# original function
                     //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), (int)(anchor2.Range * 2 * y_scale));
                 }
                 if (anchor3.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor3.X * x_scale), (int)(anchor3.Y * y_scale), 5, pen_anchor);
-                    e.DrawCircle((int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), pen_anchor);
+                    //e.DrawCircle((int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), pen_anchor);
                     //C# original function
                     //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), (int)(anchor3.Range * 2 * y_scale));
                 }
@@ -540,19 +543,19 @@ namespace Trilateration_Android
                 if ((pic32_open > 0) && (tag_open > 0))    
                 {
                     timer1 = new System.Timers.Timer();
-                    timer1.Interval = 100;
+                    timer1.Interval = 300;
                     timer1.Elapsed += new System.Timers.ElapsedEventHandler(timer1_Tick);
                     timer1.Start();
                     //timer1.Enabled = true;
 
                     //Brian+ Add timers to hook driving_DataReceived() and tag_DataReceived()
                     Pic32DataRecvTimer = new System.Timers.Timer();
-                    Pic32DataRecvTimer.Interval = 100;
+                    Pic32DataRecvTimer.Interval = 300;
                     Pic32DataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(driving_DataReceived);
                     Pic32DataRecvTimer.Start();
 
                     TagDataRecvTimer = new System.Timers.Timer();
-                    TagDataRecvTimer.Interval = 100;
+                    TagDataRecvTimer.Interval = 300;
                     TagDataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(tag_DataReceived);
                     TagDataRecvTimer.Start();
 
@@ -563,6 +566,7 @@ namespace Trilateration_Android
                     hpcounter4.Start();
                     btnConnect.Enabled = false;
                     myFlag.screen_ready = true;
+                    buttonCalCompass.Enabled = true;
                 }
             };
 
@@ -653,7 +657,7 @@ namespace Trilateration_Android
                             //groupBox2.Visible = true;
                             //buttonHide.Visible = true;
                             labelTable.Visibility = ViewStates.Visible;
-                            labelVehicle.Visibility = ViewStates.Gone;
+                            //labelVehicle.Visibility = ViewStates.Gone;
                             btnLoad.Visibility = ViewStates.Gone;
                             btnConnect.Enabled = true;
                             //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
@@ -910,7 +914,8 @@ namespace Trilateration_Android
             //labelTable.Top = offset;
 
             labelVehicle.SetX(offset);
-            labelVehicle.SetY(MainHeight - labelVehicle.Height - offset);
+            //labelVehicle.SetY(MainHeight - labelVehicle.Height - offset);
+            labelVehicle.SetY(MainHeight -  40);
 
             labelA.SetX((int)(offset + anchor1.X * x_scale));
             labelA.SetY ( (int)(offset + anchor1.Y * y_scale));
@@ -941,7 +946,7 @@ namespace Trilateration_Android
             
             //Toby's patch
             tmpString = " D=" + myVehicle.compass.ToString() + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
-            tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
+            //tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
             //Toby's end
 
             //labelVehicle.Text = tmpString;
@@ -1054,7 +1059,8 @@ namespace Trilateration_Android
                 */
                 //Toby's end
             }
-            view.Invalidate();
+            //view.Invalidate();
+            RunOnUiThread(() => view.Invalidate());
         }
 
         private void OutCommand(move_command command)
@@ -1668,9 +1674,9 @@ namespace Trilateration_Android
                         target_now = 1;
                         
                         //Brian+ for renew UI
-                        btnDelete.Enabled = false;
-                        btnGo.Enabled = false;
-                        view.Invalidate();
+                        //btnDelete.Enabled = false;
+                        //btnGo.Enabled = false;
+                        //view.Invalidate();
 
                     }
                 }
