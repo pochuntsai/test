@@ -33,6 +33,7 @@ namespace Trilateration_Android
         private int target_total;
         private int target_now;
         private Single[] err = new Single[5];
+        private struct_PointF mouse_position = new struct_PointF();
         private struct_PointF previous_step = new struct_PointF();
         private struct_PointF[] target = new struct_PointF[20];
         private struct_Location[] favorite = new struct_Location[20];
@@ -52,6 +53,9 @@ namespace Trilateration_Android
         private byte[] drivingbuff = new byte[30];
 
         private int[] mField = new int[3];
+        private int[] mOffset = new int[2];
+        private int[] mMax = new int[5];
+        private int[] mMin = new int[5];
 
         private struct_config cfg = new struct_config();
         private move_command myCommand = new move_command();
@@ -65,6 +69,7 @@ namespace Trilateration_Android
         HighPerformanceCounter hpcounter1 = new HighPerformanceCounter();
         HighPerformanceCounter hpcounter2 = new HighPerformanceCounter();
         HighPerformanceCounter hpcounter3 = new HighPerformanceCounter();
+        HighPerformanceCounter hpcounter4 = new HighPerformanceCounter();
 
         // for testing
         private int test_count = 0;
@@ -75,19 +80,21 @@ namespace Trilateration_Android
         TextView textView;
         Button buttonTest2, btnDelete, btnGo;
         FrameLayout linearContent;
-        TextView labelA, labelB, labelC, labelTag, labelVehicle, labelTable;
+        TextView labelA, labelB, labelC, labelTag, labelVehicle, labelTable, labelTableC;
         //Brian+: add UART releate variables
         int pic32_open = 0;
         int tag_open = 0;
         System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer;
+        //private static System.IO.StreamWriter fwr;
 
         protected override void OnCreate(Bundle bundle)
         {
-           string path = Android.OS.Environment.ExternalStorageDirectory.AbsolutePath;
+            string path = Android.OS.Environment.ExternalStorageDirectory.AbsolutePath;
             path=System.IO.Path.Combine(path, "Trilateration_Android");
-              ComPortDataReady = 0;
+            ComPortDataReady = 0;
             target_total = 0;
             target_now = 1;
+            myFlag.screen_ready = false;
             
             // set initial value
             anchor1.X = 50;
@@ -103,6 +110,8 @@ namespace Trilateration_Android
             mapsize.X = 1000;
             mapsize.Y = 800;
             offset = 10;
+            //Brian+: adjust offset = 40, this is pixel
+            //offset = 40;
             
             for (i = 0; i <= 9; i++)
             {
@@ -130,23 +139,27 @@ namespace Trilateration_Android
             var buttonTest = this.FindViewById<Button>(Resource.Id.buttonTest);
             buttonTest2 = this.FindViewById<Button>(Resource.Id.buttonTest2);
             var buttonCalCompass = this.FindViewById<Button>(Resource.Id.buttonCalCompass);
-           labelA= this.FindViewById<TextView>(Resource.Id.labelA);
-           labelB= this.FindViewById<TextView>(Resource.Id.labelB);
-         labelC=   this.FindViewById<TextView>(Resource.Id.labelC);
-          labelTag=  this.FindViewById<TextView>(Resource.Id.labelTag);
-          labelVehicle = this.FindViewById<TextView>(Resource.Id.labelVehicle);
-          labelTable = this.FindViewById<TextView>(Resource.Id.labelTable);
+            labelA= this.FindViewById<TextView>(Resource.Id.labelA);
+            labelB= this.FindViewById<TextView>(Resource.Id.labelB);
+            labelC=   this.FindViewById<TextView>(Resource.Id.labelC);
+            labelTag=  this.FindViewById<TextView>(Resource.Id.labelTag);
+            labelVehicle = this.FindViewById<TextView>(Resource.Id.labelVehicle);
+            labelTable = this.FindViewById<TextView>(Resource.Id.labelTable);
+            //Brian+ for debug
+            labelTableC = this.FindViewById<TextView>(Resource.Id.labelTableC);   
             Toast.MakeText(this, path, ToastLength.Long).Show();
 
             btnLoad.SetX(300);
-            if (!System.IO.Directory.Exists(path))
+            //Brian+ for test: create new default.set and raw.bmp anyway
+            //if (!System.IO.Directory.Exists(path))
             {
               
-                System.IO.Directory.CreateDirectory(path);
-                int i=0;
-               using(var stream=  Assets.Open("default.set"))
+               System.IO.Directory.CreateDirectory(path);
+               int i=0;
+               using(var stream = Assets.Open("default.set"))
                {
-                   using (FileStream fs = new FileStream(path + @"/default.set", FileMode.CreateNew))
+                   //using (FileStream fs = new FileStream(path + @"/default.set", FileMode.CreateNew))
+                   using (FileStream fs = new FileStream(path + @"/default.set", FileMode.Create))
                    {
                        byte[] byt = new byte[1024];
                        while ((i = stream.Read(byt, 0, byt.Length)) != 0)
@@ -158,7 +171,8 @@ namespace Trilateration_Android
                }
                using (var stream = Assets.Open("Raw.bmp"))
                {
-                   using (FileStream fs = new FileStream(path + @"/Raw.bmp", FileMode.CreateNew))
+                   //using (FileStream fs = new FileStream(path + @"/Raw.bmp", FileMode.CreateNew))
+                   using (FileStream fs = new FileStream(path + @"/Raw.bmp", FileMode.Create))
                    {
                        byte[] byt = new byte[1024];
                        while ((i = stream.Read(byt, 0, byt.Length)) != 0)
@@ -177,8 +191,14 @@ namespace Trilateration_Android
             wr = new System.IO.StreamWriter(logName, true);
             wr.Write("==== " + DateTime.Now.ToString("yyyyMMdd,HH:mm:ss ") + " ====\r\n");
 
-
-             view = new DrawView(this);
+            //Brian+: create go log file
+            //string logGo = path + @"/" + "log_go.txt";       // Set the file name
+            //fwr = new System.IO.StreamWriter(logGo, true);
+            //fwr.WriteLine("==== FUCK TEST ====");
+            
+            //fwr.Write("==== " + DateTime.Now.ToString("yyyyMMdd,HH:mm:ss ") + " ====\r\n");
+            
+            view = new DrawView(this);
 
             view.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent);
             linearContent.AddView(view);
@@ -227,13 +247,15 @@ namespace Trilateration_Android
                 }
             };
             view.Visibility = ViewStates.Gone;
+            
             view.OnDrawing += (sender, e) =>
             {
 
                 int i;
 
                 // Set pens
-                Paint pen_anchor = new Paint() { Color = Color.DarkSeaGreen, StrokeWidth = 3 };
+                Paint pen_anchor = new Paint() { Color = Color.DarkSeaGreen, StrokeWidth = 3, };
+                pen_anchor.SetStyle(Paint.Style.Stroke); //Brian+ for set paint style=stroke
                 Paint pen_tag_s = new Paint() { Color = Color.LawnGreen, StrokeWidth = 6 }; 
                 Paint pen_tag_m = new Paint() { Color = Color.Firebrick, StrokeWidth = 6 }; 
                 Paint pen_indication = new Paint() { Color = Color.Brown, StrokeWidth = 2 }; 
@@ -251,17 +273,22 @@ namespace Trilateration_Android
                 {
                     e.DrawCircle((int)(anchor1.X * x_scale), (int)(anchor1.Y * y_scale), 5, pen_anchor);
                     e.DrawCircle((int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), pen_anchor);
-
+                    //C# original function
+                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), (int)(anchor1.Range * 2 * y_scale));
                 }
                 if (anchor2.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor2.X * x_scale), (int)(anchor2.Y * y_scale), 5, pen_anchor);
                     e.DrawCircle( (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), pen_anchor);
+                    //C# original function
+                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), (int)(anchor2.Range * 2 * y_scale));
                 }
                 if (anchor3.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor3.X * x_scale), (int)(anchor3.Y * y_scale), 5, pen_anchor);
                     e.DrawCircle((int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), pen_anchor);
+                    //C# original function
+                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), (int)(anchor3.Range * 2 * y_scale));
                 }
                 if (myTag.Rate > 0)
                 {
@@ -293,7 +320,6 @@ namespace Trilateration_Android
 
             };
 
-
             btnDelete.Click += (sender, e) =>
             {
                 myFlag.moving = false;
@@ -304,11 +330,10 @@ namespace Trilateration_Android
 
                 view.Invalidate();
             };
-
-
+            
             btnGo.Click += (sender, e) =>
             {
-                Log.Debug("Brian", "myFlag.moving=" + myFlag.moving);
+                //Log.Debug("Brian", "myFlag.moving=" + myFlag.moving);
                 if (!myFlag.moving)
                 {
                     previous_step.X = myTag.X;
@@ -324,17 +349,27 @@ namespace Trilateration_Android
              {
                  if (e.Action == MotionEventActions.Down)
                  {
+                     if (!myFlag.screen_ready) return; //Toby's patch
+
+                     
                      short walkable;
                      Single diffX;
                      Single diffY;
+                     Single tmpSingle;
 
-                     Log.Debug("Brian", "[Touch]screen.X=" + e.GetX() + "," + "screen.Y=" + e.GetY());
-                     Log.Debug("Brian", "[Touch]Map.width=" + myMap.Width + "," + "Map.height=" + myMap.Height);
-                     Log.Debug("Brian", "[Touch]screen2map_x=" + screen2map_x + "," + "screen2map_y=" + screen2map_y);
+                     //Log.Debug("Brian", "[Touch]screen.X=" + e.GetX() + "," + "screen.Y=" + e.GetY());
+                     //Log.Debug("Brian", "[Touch]Map.width=" + myMap.Width + "," + "Map.height=" + myMap.Height);
+                     //Log.Debug("Brian", "[Touch]screen2map_x=" + screen2map_x + "," + "screen2map_y=" + screen2map_y);
                      walkable = myMap.CheckWalk((int)(e.GetX() * screen2map_x), (int)(e.GetY() * screen2map_y));
                      Log.Debug("Brian", "[Touch]walkable=" + walkable);
-                     //Brian+: marked for test
                      
+                     //Toby's Patch
+                     tmpSingle = target[target_total].X - e.GetX() / x_scale;
+                     if (Math.Abs(tmpSingle) < 15) return;
+                     tmpSingle = target[target_total].Y - e.GetY() / y_scale;
+                     if (Math.Abs(tmpSingle) < 15) return;
+                     //Toby's End
+
                      if (walkable != 0)
                      {
                          //pictureBoxWalkable.Image = Properties.Resources.vehicleoff;
@@ -474,8 +509,8 @@ namespace Trilateration_Android
                         textView.Append("Open ttymx2 fail!!\r\n");
 
                     }
-                
-                
+
+                    //myFlag.screen_ready = true;
                 
                 
                     //tagPort = new SerialPort(Port1);
@@ -498,24 +533,26 @@ namespace Trilateration_Android
                     //drivingPort.Open();
                     //if (!drivingPort.IsOpen) textBox1.AppendText("Driving board connect fail");
                 }
-
+                //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
+                SetAppearance();
+                
                 //if (tagPort.IsOpen && drivingPort.IsOpen)
                 if ((pic32_open > 0) && (tag_open > 0))    
                 {
                     timer1 = new System.Timers.Timer();
-                    timer1.Interval = 300;
+                    timer1.Interval = 100;
                     timer1.Elapsed += new System.Timers.ElapsedEventHandler(timer1_Tick);
                     timer1.Start();
                     //timer1.Enabled = true;
 
                     //Brian+ Add timers to hook driving_DataReceived() and tag_DataReceived()
                     Pic32DataRecvTimer = new System.Timers.Timer();
-                    Pic32DataRecvTimer.Interval = 300;
+                    Pic32DataRecvTimer.Interval = 100;
                     Pic32DataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(driving_DataReceived);
                     Pic32DataRecvTimer.Start();
 
                     TagDataRecvTimer = new System.Timers.Timer();
-                    TagDataRecvTimer.Interval = 300;
+                    TagDataRecvTimer.Interval = 100;
                     TagDataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(tag_DataReceived);
                     TagDataRecvTimer.Start();
 
@@ -523,14 +560,16 @@ namespace Trilateration_Android
                     hpcounter1.Start();
                     hpcounter2.Start();
                     hpcounter3.Start();
+                    hpcounter4.Start();
                     btnConnect.Enabled = false;
+                    myFlag.screen_ready = true;
                 }
             };
 
             buttonTest.Click += (sender, e) =>
             {
                 int ii;
-                Log.Debug("Brian", "Press buttonTest event!!");
+                //Log.Debug("Brian", "Press buttonTest event!!");
                 myFlag.testing = false;
                 ii = 0;
                 while (true)
@@ -599,6 +638,7 @@ namespace Trilateration_Android
                     {
                         textView.Append("Processing data.\r\n");
                         success = myMap.Preprocess();
+                        //success = true;
                         if (!success)
                         {
                            textView.Append("Initial fail. \r\n");
@@ -615,9 +655,9 @@ namespace Trilateration_Android
                             labelTable.Visibility = ViewStates.Visible;
                             labelVehicle.Visibility = ViewStates.Gone;
                             btnLoad.Visibility = ViewStates.Gone;
-
+                            btnConnect.Enabled = true;
                             //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
-                            SetAppearance();
+                            //SetAppearance();
                         }
 
                     }
@@ -700,7 +740,7 @@ namespace Trilateration_Android
                         anchor1.Updated = true;
                         anchor1.RangeOld = anchor1.Range;
                         anchor1.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor1.Range) / 2);
-                        Log.Debug("Brian", "anchor1.Range=" + anchor1.Range);
+                        //Log.Debug("Brian", "anchor1.Range=" + anchor1.Range);
                         hpcounter1.Stop();
                         anchor1.SampleTime = hpcounter1.Duration;
                         hpcounter1.Start();
@@ -710,7 +750,7 @@ namespace Trilateration_Android
                         anchor2.Updated = true;
                         anchor2.RangeOld = anchor2.Range;
                         anchor2.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor2.Range) / 2);
-                        Log.Debug("Brian", "anchor2.Range=" + anchor2.Range);
+                        //Log.Debug("Brian", "anchor2.Range=" + anchor2.Range);
                         hpcounter2.Stop();
                         anchor2.SampleTime = hpcounter2.Duration;
                         hpcounter2.Start();
@@ -720,7 +760,7 @@ namespace Trilateration_Android
                         anchor3.Updated = true;
                         anchor3.RangeOld = anchor3.Range;
                         anchor3.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor3.Range) / 2);
-                        Log.Debug("Brian", "anchor3.Range=" + anchor3.Range);
+                        //Log.Debug("Brian", "anchor3.Range=" + anchor3.Range);
                         hpcounter3.Stop();
                         anchor3.SampleTime = hpcounter3.Duration;
                         hpcounter3.Start();
@@ -755,22 +795,29 @@ namespace Trilateration_Android
         {
             int readbuff;
             int tmpInt;
-            String Pic32RecvData = null;
+            short tmpShort;
+            byte[] Pic32RecvData = new byte[255];
+            //String Pic32RecvData = null;
 
-            Pic32RecvData = Uart2C.ReceiveMsgUart(pic32_open);
+            //Pic32RecvData = Uart2C.ReceiveMsgUart(pic32_open);
+            Pic32RecvData = Uart2C.ReceiveMsgUartByte(pic32_open);
+            //Pic32RecvData = Uart2C.ReceiveMsgUart(pic32_open);
             //RunOnUiThread(() => textView.Append("Pic32RecvData =" + Pic32RecvData + "\r\n"));
             //Log.Debug("Brian", "Pic32RecvData(Original)=" + Pic32RecvData);
-            byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(Pic32RecvData);
-            //Log.Debug("Brian", "Pic32RecvData(Convert)=" + ToHexString(byteArray));
+            
+            //byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(Pic32RecvData);
+            //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Raw)=" + Pic32RecvData);
+            Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
             //Log.Debug("Brian", "Pic32RecvData(Length)=" + byteArray.Length);
             //SerialPort p = (SerialPort)sender;
             //while (p.BytesToRead > 0)
             //while (Pic32RecvData != null)
-            for (int j = 0; j < byteArray.Length; j++)
+            //for (int j = 0; j < byteArray.Length; j++)
+            for (int j = 0; j < Pic32RecvData.Length; j++)
             {
                 
                 //byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(Pic32RecvData);
-                readbuff = byteArray[j];
+                readbuff = Pic32RecvData[j];
 
                 if (readbuff == 0x53)
                 {
@@ -780,10 +827,20 @@ namespace Trilateration_Android
                 else if (drivingbufflen >= 12 && drivingbuff[0] == 0x20)
                 {
                     drivingbufflen = 0;
+                    //Toby's patch
                     tmpInt = (short)((drivingbuff[1] << 8) + drivingbuff[2]);
-                    myVehicle.compass = (short)((tmpInt + myVehicle.compass) / 2);
-                    myVehicle.encoderL = (short)((drivingbuff[3] << 8) + drivingbuff[4]);
-                    myVehicle.encoderR = (short)((drivingbuff[5] << 8) + drivingbuff[6]);
+                    if (tmpInt < 360 && tmpInt > -360) myVehicle.compass = (short)((tmpInt + myVehicle.compass) / 2);
+                    tmpShort = (short)((drivingbuff[3] << 8) + drivingbuff[4]);
+                    if (tmpShort > 100) tmpShort = 100;
+                    else if (tmpShort < -100) tmpShort = -100;
+                    myVehicle.encoderL = (short)(myVehicle.encoderL + tmpShort);
+                    tmpShort = (short)((drivingbuff[5] << 8) + drivingbuff[6]);
+                    if (tmpShort > 100) tmpShort = 100;
+                    else if (tmpShort < -100) tmpShort = -100;
+                    myVehicle.encoderR = (short)(myVehicle.encoderR + tmpShort);
+                    //Toby's end
+                    Log.Debug("Brian", "myVehicle.compass=" + myVehicle.compass);
+                                        
                     for (int i = 0; i <= 4; i++)
                     {
                         myVehicle.sonic[i] = drivingbuff[7 + i];
@@ -802,6 +859,21 @@ namespace Trilateration_Android
                     mField[2] = ((drivingbuff[5] << 8) + drivingbuff[6]);
                     wr.Write(mField[0].ToString() + "," + mField[1].ToString() + "," + mField[2].ToString() + "\r\n");
                 }
+                //Toby's patch
+                else if (drivingbufflen >= 12 && drivingbuff[0] == 0x22)
+                {
+                    drivingbufflen = 0;
+                    mOffset[0] = ((drivingbuff[1] << 8) + drivingbuff[2]);
+                    mOffset[1] = ((drivingbuff[3] << 8) + drivingbuff[4]);
+                    for (i = 0; i < 4; i++)
+                    {
+                        mMin[i] = ((drivingbuff[5 + i * 2] << 8) + drivingbuff[6 + i * 2]);
+                        wr.Write("max_y," + mMin[i].ToString() + "\r\n");
+                    }
+                    wr.Write("Offset," + mOffset[0].ToString() + "," + mOffset[1].ToString() + "\r\n");
+
+                }
+                //Toby's End
                 else
                 {
                     if (drivingbufflen >= 30) drivingbufflen = 0;
@@ -814,16 +886,23 @@ namespace Trilateration_Android
         private void SetAppearance()
         {
             MainWidth = this.linearContent.Width;
-            MainHeight = this.linearContent.Height - 10;
+            //MainHeight = this.linearContent.Height - 10;
+            MainHeight = this.linearContent.Height;
 
             Log.Debug("Brian", "[SetAppearance]linearContent.width=" + MainWidth + "," + "linearContent.height=" + MainHeight);
             x_scale = MainWidth;
             x_scale = x_scale / mapsize.X;
+            Log.Debug("Brian", "[SetAppearance]x_scale=" + x_scale + "," + "mapsize.X=" + mapsize.X);
+            
             y_scale = MainHeight;
             y_scale = y_scale / mapsize.Y;
+            Log.Debug("Brian", "[SetAppearance]y_scale=" + y_scale + "," + "mapsize.Y=" + mapsize.Y);
+            
+            
+            Log.Debug("Brian", "[SetAppearance]myMap.width=" + myMap.Width + "," + "myMap.height=" + myMap.Height);
             screen2map_x = (Single)myMap.Width / (Single)MainWidth;
             screen2map_y = (Single)myMap.Height / (Single)MainHeight;
-
+            Log.Debug("Brian", "[SetAppearance]screen2map_x=" + screen2map_x + "," + "screen2map_y" + screen2map_y);
             //groupBox2.Left = MainWidth - groupBox2.Width - offset;
             //textBox1.Left = MainWidth - textBox1.Width - offset;
             //buttonHide.Left = MainWidth - buttonHide.Width - offset;
@@ -853,10 +932,18 @@ namespace Trilateration_Android
             // labelTable
             //labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message;
             RunOnUiThread(() => labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message);
-
+            RunOnUiThread(() => labelTableC.Text = "    Range,   Rate\r\nC " + anchor3.Message);
+                        
+            //Log.Debug("Brian", "anchor3.Message=" + anchor3.Message);
             // labelVehicle
-            tmpString = " D=" + myVehicle.compass.ToString() + ", A=" + myCommand.var1.ToString() + ", S=" + myCommand.var2.ToString();
-            tmpString = tmpString + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
+            //tmpString = " D=" + myVehicle.compass.ToString() + ", A=" + myCommand.var1.ToString() + ", S=" + myCommand.var2.ToString();
+            //tmpString = tmpString + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
+            
+            //Toby's patch
+            tmpString = " D=" + myVehicle.compass.ToString() + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
+            tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
+            //Toby's end
+
             //labelVehicle.Text = tmpString;
             RunOnUiThread(() => labelVehicle.Text = tmpString);
             
@@ -909,8 +996,17 @@ namespace Trilateration_Android
             if (myFlag.loc_init_done)
             {
                 Single[] tmpSingleA = new Single[3];
-                myEKF.EncoderL = 0;
-                myEKF.EncoderR = 0;
+                
+                //Toby's patch
+                hpcounter4.Stop();
+                myEKF.dT = (Single)hpcounter4.Duration * 1000f;
+                hpcounter4.Start();
+                myEKF.EncoderL = myVehicle.encoderL;
+                myEKF.EncoderR = myVehicle.encoderR;
+                myVehicle.encoderL = 0;
+                myVehicle.encoderR = 0;
+                //Toby's done
+                
                 tmpSingleA[0] = anchor1.Range;
                 tmpSingleA[1] = anchor2.Range;
                 tmpSingleA[2] = anchor3.Range;
@@ -918,12 +1014,9 @@ namespace Trilateration_Android
                 myEKF.Calculation();
                 myTag.X = myEKF.tagX;
                 myTag.Y = myEKF.tagY;
+                Log.Debug("Brian", "[After_EKF]myTag.X=" + myTag.X + "," + "mytag.Y=" + myTag.Y);
                 renew_anchor_disp();
-                //wr.Write(anchor1.Range.ToString("f3") + "," + anchor2.Range.ToString("f3") + "," + anchor3.Range.ToString("f3") + ",");
-                //wr.Write(myEKF.outval + ",");
-                //wr.Write(myTag.X.ToString("f3") + "," + myTag.Y.ToString("f3") + "\r\n");
-                //test_count++;
-
+                
                 for (int j = 9; j >= 1; j--)
                 {
                     myTag_Old_X[j] = myTag_Old_X[j - 1];
@@ -933,6 +1026,7 @@ namespace Trilateration_Android
                 myTag_Old_Y[0] = myTag.Y;
                 avg_stdev(out myTag.Avg.X, out std_x, myTag_Old_X);
                 avg_stdev(out myTag.Avg.Y, out std_y, myTag_Old_Y);
+                myFlag.sampling = true; //Toby's patch
             }
 
             if (myFlag.moving)
@@ -940,6 +1034,25 @@ namespace Trilateration_Android
                 wr.Write("{0:mm:ss} ", DateTime.Now);
                 wr.Write(myCommand.turn.ToString());
                 wr.Write("\r\n");
+
+                //Toby's patch
+                /* 
+                if (checkBoxRecord.Checked)
+                {
+                    wr.Write(myEKF.dT.ToString("f1") + ",");
+                    wr.Write(myCommand.turn.ToString() + ",");
+                    wr.Write(anchor1.Range.ToString("f1") + ",");
+                    wr.Write(anchor2.Range.ToString("f1") + ",");
+                    wr.Write(anchor3.Range.ToString("f1") + ",");
+                    wr.Write(myEKF.EncoderL.ToString() + ",");
+                    wr.Write(myEKF.EncoderR.ToString() + ",");
+                    wr.Write(myVehicle.compass.ToString("f1") + ",");
+                    wr.Write(myTag.X.ToString("f1") + "," + myTag.Y.ToString("f1"));
+                    wr.Write("\r\n");
+                    hpcounter4.Start();
+                }
+                */
+                //Toby's end
             }
             view.Invalidate();
         }
@@ -1010,7 +1123,7 @@ namespace Trilateration_Android
                 {
                     wr.Write(myVehicle.sonic[i].ToString("X2") + " ");
                 }
-                wr.Write(ob.Delta_error.ToString("f1") + " " + ob.Delta_D.ToString("f1") + " " + ob.Control.ToString("f1") + " " + ob.OutSpeed.ToString() + " " + ob.OutTurn.ToString());
+                
                 Thread.Sleep(100);
             }
         }
@@ -1084,7 +1197,15 @@ namespace Trilateration_Android
             wr.Write("{0:mm:ss} ", DateTime.Now);
             wr.Write("Program End\r\n");
             wr.Close();
+            //Brian+ for log go file
+            //fwr.Write("{0:mm:ss} ", DateTime.Now);
+            //fwr.Write("Program End\r\n");
+            //fwr.Close();
+
             base.OnDestroy();
+
+             
+
         }
 
 
@@ -1340,15 +1461,12 @@ namespace Trilateration_Android
         private void cal_move(object state)
         {
             // coefficient
-            Single[] k = new Single[5] { 4f, 2f, 1f, 1f, 0f };
-            Single k_total = 8f;
-            Single max_turn = 45;
+            Single[] k = new Single[5] { 20f, 5f, 5f, 0f, 0f };
+            Single max_turn = 70;
+            
             int max_speed = 90;
-            int target_range = 50;
-
-            Single slope, intercept;
-
-            Single diff_shift;
+            int[] ref_range = new int[2] { 20, 40 };
+            int target_range;
             Single diff_dist;
             Single diff_angle;
             Single vector_cross;
@@ -1360,22 +1478,36 @@ namespace Trilateration_Android
             struct_PointF vector_old;
             struct_PointF vector_now;
 
-            int control_inv_count = 0;
-
             target_now = 1;
             myCommand.arrived = false;
 
             // other variables
             myCommand.var1 = target[target_now].Theta;
             myCommand.var2 = target_now;
-            cal_move_init();
-            cal_move_init();
+            //Toby's patch
+            cal_turn();
+            cal_turn();
+            //Toby's end
+
+            //cal_move_init();
+            //Log.Debug("Brian", "[cal_move]cal_move_init_1 done!!!");
+            //fwr.Write("[cal_move]cal_move_init_1 done!!!" + "\r\n");
+            //cal_move_init();
+            //fwr.Write("[cal_move]cal_move_init_2 done!!!" + "\r\n");
+            //Log.Debug("Brian", "[cal_move]cal_move_init_2 done!!!");
             forward_only(2);
+            //fwr.Write("[cal_move]forward_only done!!!" + "\r\n");
+            Log.Debug("Brian", "[cal_move]forward_only done!!!");
+            //fwr.Write("[cal_move]myFlag.moving=" + myFlag.moving + "\r\n");
+            
+            Log.Debug("Brian", "[cal_move]myFlag.moving=" + myFlag.moving);
 
             while (myFlag.moving)
             {
-                if (target_now < target_total) target_range = 45;
-                else target_range = 30;
+                //Toby's patch
+                if (target_now < target_total) target_range = ref_range[1];
+                else target_range = ref_range[0];
+                //Toby's end
 
                 // check obstacles
                 ob.save_sensor_reading(myVehicle.sonic);
@@ -1383,17 +1515,23 @@ namespace Trilateration_Android
                 // check if arrived to the target
                 diff_dist = (Single)Math.Sqrt((target[target_now].X - myTag.X) * (target[target_now].X - myTag.X) + (target[target_now].Y - myTag.Y) * (target[target_now].Y - myTag.Y));
                 if (diff_dist < target_range) myCommand.arrived = true;
-
+                //Brian+: 2015/03/25 Disable sonic for test
+                /*
                 if (ob.HasObstacle && !myCommand.arrived)
                 {
                     ob.avoid(myCommand.turn);
                     myCommand.speed = ob.OutSpeed;
                     myCommand.turn = ob.OutTurn;
                     OutCommand(myCommand);
+                    //fwr.Write("[cal_move]block1 entered!!" + "\r\n");
                 }
-                else if (control_inv_count >= cfg.ControlInv)
+                else*/
+                //if (control_inv_count >= cfg.ControlInv)
+                //Toby's patch
+                if (myFlag.sampling)
                 {
-                    control_inv_count = 0;
+                    myFlag.sampling = false;
+                    //Toby's end
 
                     #region determine the speed of the vehicle (for reference)
                     if (diff_dist < target_range)      // if arrived the target
@@ -1402,40 +1540,31 @@ namespace Trilateration_Android
                         myCommand.turn = 0;
                         myCommand.arrived = true;
                     }
-                    else if (diff_dist < 100)    // if pretty close to the target
+                    //Toby's patch
+                    else if (diff_dist < 200)    // if pretty close to the target
                     {
-                        myCommand.speed = (int)(diff_dist - 10);
+                        myCommand.speed = (int)(30 + diff_dist * (max_speed - 30) / 200);
                         myCommand.arrived = false;
+                        max_turn = 100;
                     }
+                    //Toby's end
                     else                        // ordinary situation
                     {
                         myCommand.speed = max_speed;
                         myCommand.arrived = false;
+                        max_turn = 60; //Toby's patch
                     }
 
                     #endregion
 
                     #region calculate angle difference
-                    diff_angle = target[target_now].Theta - myVehicle.compass;
+                    //diff_angle = target[target_now].Theta - myVehicle.compass;
+                    diff_angle = (Single)(Math.Atan2((target[target_now].Y - myTag.Avg.Y), (target[target_now].X - myTag.Avg.X)) * 180f / 3.14f) + cfg.MapEast - myVehicle.compass; //Toby's patch
                     if (diff_angle > 180) diff_angle = diff_angle - 360;
                     else if (diff_angle < -180) diff_angle = diff_angle + 360;
                     #endregion
 
-                    #region calculate shift
-                    diff_shift = 0;
-                    if (target[target_now].X != target[target_now - 1].X)
-                    {
-                        slope = (Single)(target[target_now].Y - target[target_now - 1].Y) / (target[target_now].X - target[target_now - 1].X);
-                        intercept = target[target_now].Y - slope * target[target_now].X;
-                        diff_shift = (Single)((slope * myTag.Avg.X - 1 * myTag.Avg.Y + intercept) / Math.Sqrt(Math.Pow(Math.Abs(slope), 2) + 1));
-                    }
-                    else
-                    {
-                        diff_shift = (Single)(myTag.Avg.X - target[target_now].X);
-                    }
-                    #endregion
-
-                    if ((diff_angle > 50 || diff_angle < -50) && diff_dist > 200)
+                    if ((diff_angle > 40 || diff_angle < -40) && diff_dist > 100) //Toby's patch
                     {
                         #region need to be turn in place
                         myCommand.speed = 50;
@@ -1464,7 +1593,7 @@ namespace Trilateration_Android
                             vector_cross = vector_old.X * vector_now.Y - vector_old.Y * vector_now.X;
                             scalar_robot = (Single)Math.Sqrt(vector_old.X * vector_old.X + vector_old.Y * vector_old.Y);
                             scalar_target = (Single)Math.Sqrt(vector_now.X * vector_now.X + vector_now.Y * vector_now.Y);
-                            unit_cross = vector_cross / scalar_robot / scalar_target;
+                            unit_cross = vector_cross / scalar_target / scalar_robot; //Toby's patch
                             unit_dot = (vector_old.X * vector_now.X + vector_old.Y * vector_now.Y) / scalar_robot / scalar_target;
                             if (unit_cross > 1) unit_cross = 1;
                             else if (unit_cross < -1) unit_cross = -1;
@@ -1490,11 +1619,20 @@ namespace Trilateration_Android
                             {
                                 tmpSingle1 = tmpSingle1 + err[i] * k[i];
                             }
-                            if (tmpSingle1 > k_total) tmpSingle1 = k_total;
-                            else if (tmpSingle1 < k_total * -1) tmpSingle1 = k_total * -1f;
+                            //if (tmpSingle1 > k_total) tmpSingle1 = k_total;
+                            //else if (tmpSingle1 < k_total * -1) tmpSingle1 = k_total * -1f;
 
                             // calculate turn
-                            myCommand.turn = (int)(max_turn * tmpSingle1 / k_total);
+                            //Toby's patch
+                            myCommand.turn = (int)(myCommand.turn + tmpSingle1);
+                            if (myCommand.turn > max_turn) myCommand.turn = (int)max_turn;
+                            else if (myCommand.turn < max_turn * -1) myCommand.turn = (int)(max_turn * -1);
+
+                            if (err[0] < 0.1 && err[0] > -0.1)
+                            {
+                                if (err[1] < 0.1 && err[1] > -0.1) myCommand.turn = 0;
+                            }
+                            //Toby's end
 
                             // update previous step
                             previous_step.X = myTag.Avg.X;
@@ -1504,15 +1642,14 @@ namespace Trilateration_Android
                     }
 
                     OutCommand(myCommand);
-
+                    //fwr.Write("[cal_move]block2 entered!!" + "\r\n");
                     // other variables
-                    myCommand.var1 = diff_angle;
-                    myCommand.var2 = diff_shift;
-                    myCommand.var3 = myCommand.turn;
+                    //myCommand.var1 = diff_angle;
+                    //myCommand.var2 = diff_shift;
+                    //myCommand.var3 = myCommand.turn;
 
                 }
-                else control_inv_count++;
-
+                
                 if (myCommand.arrived)
                 {
                     myFlag.testing = true;
@@ -1521,7 +1658,7 @@ namespace Trilateration_Android
                     {
                         target_now++;
                         Thread.Sleep(500);
-                        for (i = 0; i <= 2; i++) cal_move_init();
+                        for (i = 0; i <= 2; i++) cal_turn(); //Toby's patch
                         forward_only(1);
                     }
                     else
@@ -1529,16 +1666,24 @@ namespace Trilateration_Android
                         myFlag.moving = false;
                         target_total = 0;
                         target_now = 1;
+                        
+                        //Brian+ for renew UI
+                        btnDelete.Enabled = false;
+                        btnGo.Enabled = false;
+                        view.Invalidate();
+
                     }
                 }
-
+                
                 // at last, output the command
-                Thread.Sleep(70);
+                
                 OutCommand(myCommand);
+                Thread.Sleep(90);
+                //fwr.Write("[cal_move]block3 entered!!" + "\r\n");
             }
         }
 
-        private void cal_move_init()
+        private void cal_turn()
         {
             Single diff_angle;
 
@@ -1553,13 +1698,24 @@ namespace Trilateration_Android
                 if (diff_angle > 180) diff_angle = diff_angle - 360;
                 else if (diff_angle < -180) diff_angle = diff_angle + 360;
 
+                /*
                 if (diff_angle > 100) diff_angle = 100;
                 else if (diff_angle < -100) diff_angle = -100;
                 myCommand.speed = (int)diff_angle;
 
                 myCommand.turn = 100;
+                */
+                myCommand.turn = (int)diff_angle;
+                if (myCommand.turn > 100) myCommand.turn = 100;
+                else if (myCommand.turn < -100) myCommand.turn = -100;
+                else if (myCommand.turn > 0 && myCommand.turn < 15) diff_angle = 15;
+                else if (myCommand.turn < 0 && myCommand.turn > -15) diff_angle = -15;
+
+
+                myCommand.speed = 0;
                 myCommand.vehicle_turnning = true;
                 myCommand.vehicle_done = false;
+                Log.Debug("Brian", "[cal_move_init]mycommand.speed=" + myCommand.speed + "," + "mycommand.turn=" + myCommand.turn);
                 OutCommand(myCommand);
 
                 Thread.Sleep(100);
