@@ -36,12 +36,17 @@
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:id="@+id/buttonCalCompass"
-                android:visibility="invisible" />
+                android:visibility="visible" />
             <TextView
                 android:text="  Range, Rate"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:id="@+id/labelTable" />
+            <TextView
+                android:text="  Range, Rate"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:id="@+id/labelTableC" />
         </LinearLayout>
         <FrameLayout
             android:orientation="horizontal"
@@ -53,8 +58,8 @@
             android:layout_height="match_parent">
             <TextView
                 android:text="A"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:id="@+id/labelA" />
             <Button
                 android:text="Load"
@@ -63,25 +68,25 @@
                 android:id="@+id/btnLoad" />
             <TextView
                 android:text="B"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:id="@+id/labelB" />
             <TextView
                 android:text="C"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:id="@+id/labelC" />
             <TextView
                 android:text="Tag"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:id="@+id/labelTag" />
             <TextView
                 android:text="Vehicle"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:id="@+id/labelVehicle"
-                android:visibility="gone" />
+                android:visibility="visible" />
         </FrameLayout>
     </LinearLayout>
     <LinearLayout
