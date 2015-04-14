@@ -18,7 +18,7 @@ namespace Trilateration_Android
         public ushort MapHeight;
         public ushort GridWidth;
         public ushort GridHeight;
-        public ushort ControlInv;
+        //public ushort ControlInv;
         public ushort MaxSpeed;
         public short MapEast;
 
@@ -44,15 +44,22 @@ namespace Trilateration_Android
             get { return p_compass; }
             set
             {
+                if (value < -360) p_compass = value + 360;
+                else if (value > 360) p_compass = value - 360;
+                else p_compass = value;
+                
+                /*
                 if (value >= 0 && value <= 360)
                 {
                     p_compass = value;
                 }
+                */ 
             }
         }
         public short encoderL;
         public short encoderR;
         public byte[] sonic = new byte[5];
+        public byte Bumper;
 
         public class_Vehicle()
         {
@@ -74,6 +81,23 @@ namespace Trilateration_Android
         public int X;
         public int Y;
         public string Note;
+    }
+    //Toby's patch
+    public class class_iteration
+    {
+        public struct_Location[] Location;
+        public int Node_num;
+        public int Repeat_num;
+        public int Repeat_now;
+        public bool Busy;
+
+        public class_iteration()
+        {
+            Location = new struct_Location[20];
+            Node_num = 0;
+            Repeat_num = 0;
+            Repeat_now = 0;
+        }
     }
 
     public class class_flag
@@ -101,6 +125,9 @@ namespace Trilateration_Android
         private int rate;
 
         public bool Updated;
+        //Toby's patch
+        public int PixelX;
+        public int PixelY;
         public Single X;
         public Single Y;
         public Single Z;

@@ -15,7 +15,7 @@ namespace Trilateration
         private int speed_normal = 25;
         private int sonic_number = 5;
         private Single kp = 0.8f;
-        private int ku = 16; //32
+        private int [] ku = new int [5] {3, 14, 16, 14, 3}; //32
 
         // need to know at the beginning
         private int turn_max;
@@ -65,6 +65,10 @@ namespace Trilateration
             get { return u; }
         }
 
+        public int Nearest;
+        public int Old0, Old1, Old2, Old3, Old4;
+        public Single Var1,Var2,Var3,Var4;
+
         /// <summary>
         /// To create an object from this class
         /// </summary>
@@ -107,6 +111,11 @@ namespace Trilateration
                 cost[i] = (Single)sonic[i] / d_safe[i];
                 if (cost[i] > 1) cost[i] = 1;
             }
+            Old0 = sonic_old[0];
+            Old1 = sonic_old[1];
+            Old2 = sonic_old[2];
+            Old3 = sonic_old[3];
+            Old4 = sonic_old[4];
         }
 
         /// <summary>
@@ -136,7 +145,7 @@ namespace Trilateration
 
 
             d_delta = (Single)(5)*((sonic[index_nearest] - sonic_old[index_nearest]) / cycle_interval) / (d_safe[index_nearest] / cycle_interval);
-            err_delta = 1f * (d_safe[index_nearest] - sonic[index_nearest]) / d_safe[index_nearest];
+            err_delta = 5f * (d_safe[index_nearest] - sonic[index_nearest]) / d_safe[index_nearest];
             ss = kp * (err_delta + d_delta);
             
             if (cost_L >= cost_R)
@@ -154,9 +163,14 @@ namespace Trilateration
                 speed = speed_normal;
             }
             u = Fuzzy(ss);
-            tmpSingle = turn + u * 5f *ku;
+            tmpSingle = turn + u * 5f * ku[index_nearest];
             turn = (int)tmpSingle;
-            
+
+            Nearest = index_nearest;
+            Var1 = d_delta;
+            Var2 = err_delta;
+            Var3 = ss;
+            Var4 = u;
         }
 
         private Single Fuzzy(Single input)
@@ -170,9 +184,9 @@ namespace Trilateration
             if (input >= P) output = -1;
             else if ((input < P) && (input > Z)) output = -1f * Math.Abs(input);
             else if ((input < Z) && (input > N)) output = Math.Abs(input);
-            else if (input < N) output = 1;
+            else if (input <= N) output = 1;
             else output = 0;
-            if (left== true) output = -1f * (output);
+            if (left == true) output = -1f * (output);
             return output;
         }
     }

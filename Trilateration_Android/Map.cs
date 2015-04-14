@@ -8,7 +8,7 @@ using Android.Graphics;
 
 namespace Trilateration
 {
-    class Map
+    partial class Map
     {
         private Bitmap rawMap;
         private string rawFileName;
@@ -145,22 +145,19 @@ namespace Trilateration
                 }
             }
 
+			A_star();
             return true;
         }
 
         /// <summary>
         /// Input the pixel of interest, output the corresponding walkability
         /// </summary>
-        public short CheckWalk(int pxl_x, int pxl_y)
+        public short CheckWalk(int grid_x, int grid_y)
         {
-            int x1, y1;
+            if (grid_x >= Grid_W) return 1;
+            if (grid_y >= Grid_H) return 1;
 
-            x1 = (int)(pxl_x / pxl_per_grid_w);
-            y1 = (int)(pxl_y / pxl_per_grid_h);
-            if (x1 >= Grid_W) x1 = Grid_W - 1;
-            if (y1 >= Grid_H) y1 = Grid_H - 1;
-
-            return Walkability[x1, y1];
+            return Walkability[grid_x, grid_y];
         }
     }
 }

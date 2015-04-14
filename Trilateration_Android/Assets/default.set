@@ -13,12 +13,12 @@ A3Y=442
 A3Z=32
 mapwidth=1700
 mapheight=1100
-mapeast=140
+mapeast=126
 gridwidth=100
 gridheight=100
 control_inv=2
 range_ratio=99
-agent_max_speed=20
+agent_max_speed=30
 favorite=Gate=378=822
 favorite=Counter=378=400
 favorite=Enter_Sofa=740=680

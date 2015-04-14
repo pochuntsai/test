@@ -43,6 +43,9 @@
     <AndroidLinkMode>SdkOnly</AndroidLinkMode>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Matrix">
+      <HintPath>..\packages\MatriX.Xamarin.Android.2.0.0.0\lib\MonoAndroid\Matrix.dll</HintPath>
+    </Reference>
     <Reference Include="Mono.Android" />
     <Reference Include="mscorlib" />
     <Reference Include="System" />
@@ -51,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="A_star.cs" />
     <Compile Include="EKFL5.cs" />
     <Compile Include="HighPerformanceCounter.cs" />
     <Compile Include="MainActivity.cs" />
@@ -59,9 +63,11 @@
     <Compile Include="obstacle.cs" />
     <Compile Include="Resources\Resource.Designer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TowardOneTarget.cs" />
   </ItemGroup>
   <ItemGroup>
     <AndroidAsset Include="Assets\default.set" />
+    <None Include="packages.config" />
     <None Include="Resources\AboutResources.txt" />
     <None Include="Assets\AboutAssets.txt" />
   </ItemGroup>
