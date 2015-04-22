@@ -16,6 +16,8 @@ using System.Threading;
 using Idv.Android.Hellouart;
 using Android.Util;
 
+using Matrix.Xmpp.Client;
+
 namespace Trilateration_Android
 {
     [Activity(Label = "Trilateration_Android", MainLauncher = true, Icon = "@drawable/icon", ScreenOrientation = Android.Content.PM.ScreenOrientation.Landscape)]
@@ -88,12 +90,25 @@ namespace Trilateration_Android
         Button buttonTest2, btnDelete, btnGo;
         FrameLayout linearContent;
         TextView labelA, labelB, labelC, labelTag, labelVehicle, labelTable, labelTableC;
+        
         //Brian+: add UART releate variables
         int pic32_open = 0;
         int tag_open = 0;
-        System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer;
+        System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer, SendCoordinateTimer;
         private static System.IO.StreamWriter fwr;
-
+        
+        //Brian+ 2015/04/7: Add xmpp variables
+        XmppClient xmppClient = new XmppClient();
+        string strTargetName = "rdc02@ea-xmppserver";
+        string strSrcName = "rdc01@ea-xmppserver";
+        string strSrcPass = "rdc01";
+        string strSrcDomain = "ea-xmppserver";
+        string strSrcHost = "ea-xmppserver.cloudapp.net";
+        //string strSrcHost = "207.46.147.45";
+        string strSendMsg, strRecvMsg;
+        bool bXmppConnection = false;
+        bool bBeaconFind = false;
+ 
         protected override void OnCreate(Bundle bundle)
         {
             string path = Android.OS.Environment.ExternalStorageDirectory.AbsolutePath;
@@ -124,15 +139,11 @@ namespace Trilateration_Android
                 myTag_Old_Y[i] = 0;
             }
 
-
-
             // obstacle-avoid algorithm
             ob = new obstacle(80, 0.1f);
 
             Iteration = new class_iteration();
-
-
-
+            
             base.OnCreate(bundle);
             this.RequestWindowFeature(WindowFeatures.NoTitle);
             SetContentView(Resource.Layout.Main);
@@ -157,6 +168,72 @@ namespace Trilateration_Android
             Toast.MakeText(this, path, ToastLength.Long).Show();
 
             btnLoad.SetX(300);
+
+            //Brian+ 2015/04/17: Add Matrix license key here
+            string lic = @"eJxkkFtPg0AQhf+K6WujS6v2YqYbCWClFyzFXt+2sOAmsOBeSuHX22q9v0xm
+                           5pszczIwYSHlkl4cspTLQYMklzKPVUkEvUs/UAPDTOSRDpUb4UDpiOWAvjvg
+                           a8IVUxVuAfrKwdJS5RkVGDySUezsSaqJygWg9xqsPCsIrz4By/nF2QqgTwZO
+                           RliKJUmpvP/h7Co6Dn2w4/DXoUUREUWdQ8EEtY8ZbhutjnHTNgD9Q+BKm2Y5
+                           VkIfd50LOMXf+lvj9qT/AyBgCSdKC4rVrhU2+6Nis+xunrrS29amMd33Qy7W
+                           XiDLx7G9RmHhzFavB3Pbe14dPER94q+jhDv1CtV1tZ7b7tCPSyvWcThcyCKY
+                           jicMmXLRnoyuZWUt2bKc7Yi/T3YyftD7OaopqepNSGbjwLFsN96RG9uS5iJp
+                           1nQ77Mzj6uWhVH3Ri5yaW4nnbqwyMweAvn0DOr8bvwkg";
+
+            Matrix.License.LicenseManager.SetLicense(lic);
+            
+            //Brian+ 2015/04/17: Add connect to xmpp server code here
+            xmppClient.Username = strSrcName;
+            xmppClient.Password = strSrcPass;
+            xmppClient.XmppDomain = strSrcDomain;
+            xmppClient.Hostname = strSrcHost;
+            xmppClient.ResolveSrvRecords = false;
+
+            xmppClient.OnClose += (sender, e) => { Log.Debug("Brian", "XMPP On Close!!"); };
+            xmppClient.OnTls += (sender, e) => { Log.Debug("Brian", "XMPP On TLS!!"); };
+            xmppClient.OnAuthError += (sender, e) => { Log.Debug("Brian", "XMPP Auth Error!!"); };
+            xmppClient.OnBeforeSasl += (sender, e) => { Log.Debug("Brian", "XMPP Before Sasl!!"); };
+            xmppClient.OnRosterStart += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterStart!!"); };
+            xmppClient.OnRosterEnd += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterEnd!!"); };
+            xmppClient.OnRosterItem += (sender, e) => { Log.Debug("Brian", "OnRosterItem => jid:" + e.RosterItem.Jid.Bare); };
+
+            xmppClient.OnMessage += (sender, e) => { Log.Debug("Brian", "OnMessage => from:" + e.Message.From); };
+            xmppClient.OnIq += (sender, e) => { Log.Debug("Brian", "OnIq => " + e.Iq.From); };
+            xmppClient.OnPresence += (sender, e) =>
+            {
+                Log.Debug("Brian", "OnPresence => from:" + e.Presence.From + " | " + e.Presence.Show + " | " + e.Presence.Status);
+                bXmppConnection = true;
+            };
+            
+            xmppClient.OnError += (sender, e) => 
+            {
+                Log.Debug("Brian", "XMPP ERROR:" + e.Exception.Message); 
+            };
+            
+            xmppClient.OnReceiveXml += (sender, e) =>
+            {
+                Log.Debug("Brian", "RECV=" + e.Text);
+            };
+            
+            xmppClient.OnSendXml += (sender, e) =>
+            {
+                Log.Debug("Brian", "SEND=" + e.Text);
+            };
+
+            //Brian+ 2015/04/17: Add handler to determine the xmpp connection state
+            xmppClient.OnBind += (sender, e) =>
+            {
+                //textView.Append("XMPP Binding Success!!\r\n");
+                Log.Debug("Brian", "XMPP Binding Success!!");
+            };
+
+            xmppClient.OnLogin += (sender, e) =>
+            {
+                //textView.Append(" XMPP Login Success!!\r\n");
+                Log.Debug("Brian", "XMPP Login Success!!");
+            };
+            
+            xmppClient.Open();
+            
             //Brian+ for test: create new default.set and raw.bmp anyway
             //if (!System.IO.Directory.Exists(path))
             {
@@ -192,7 +269,6 @@ namespace Trilateration_Android
                 
             }
 
-          
             // create log file
             string logName = path + @"/" + string.Format("log{0:HH}", DateTime.Now) + ".txt";       // Set the file name
             wr = new System.IO.StreamWriter(logName, true);
@@ -438,16 +514,6 @@ namespace Trilateration_Android
                                 
                                 //textBox1.Text = textBox1.Text + target[target_total].X.ToString() + ", " + target[target_total].Y.ToString() + ", "+target[target_total].Theta.ToString("f2")+ "\r\n";
                              }
-
-                    //target_total++;
-                    //target[target_total].X = e.X / x_scale;
-                    //target[target_total].Y = e.Y / y_scale;
-                    //diffX = target[target_total].X - target[target_total - 1].X;
-                    //diffY = target[target_total].Y - target[target_total - 1].Y;
-                    //target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f) + cfg.MapEast;
-                    //if (target[target_total].Theta < 0) target[target_total].Theta = target[target_total].Theta + 360;
-                    //else if (target[target_total].Theta > 360) target[target_total].Theta = target[target_total].Theta - 360;
-                    //buttonTest2.Text = target[target_total].Theta.ToString("f1");
                 }
 
                          if (target_total >= 1)
@@ -461,7 +527,6 @@ namespace Trilateration_Android
                      view.Invalidate();
                  }
              };
-
 
             btnConnect.Click+=(sender,e)=>
             {
@@ -558,41 +623,17 @@ namespace Trilateration_Android
 
                     }
 
-                    //myFlag.screen_ready = true;
-                
-                
-                    //tagPort = new SerialPort(Port1);
-                    //tagPort.BaudRate = Baund1;
-                    //tagPort.Parity = Parity.None;
-                    //tagPort.StopBits = StopBits.One;
-                    //tagPort.DataBits = 8;
-                    //tagPort.Handshake = Handshake.None;
-                    //tagPort.DataReceived += new SerialDataReceivedEventHandler(tag_DataReceived);
-                    //tagPort.Open();
-                    //if (!tagPort.IsOpen) textBox1.AppendText("Tag connect fail");
-
-                    //drivingPort = new SerialPort(Port2);
-                    //drivingPort.BaudRate = Baund2;
-                    //drivingPort.Parity = Parity.None;
-                    //drivingPort.StopBits = StopBits.One;
-                    //drivingPort.DataBits = 8;
-                    //drivingPort.Handshake = Handshake.None;
-                    //drivingPort.DataReceived += new SerialDataReceivedEventHandler(driving_DataReceived);
-                    //drivingPort.Open();
-                    //if (!drivingPort.IsOpen) textBox1.AppendText("Driving board connect fail");
                 }
                 //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
                 SetAppearance();
                 
-                //if (tagPort.IsOpen && drivingPort.IsOpen)
                 if ((pic32_open > 0) && (tag_open > 0))    
                 {
                     timer1 = new System.Timers.Timer();
                     timer1.Interval = 200;
                     timer1.Elapsed += new System.Timers.ElapsedEventHandler(timer1_Tick);
                     timer1.Start();
-                    //timer1.Enabled = true;
-
+                    
                     //Brian+ Add timers to hook driving_DataReceived() and tag_DataReceived()
                     Pic32DataRecvTimer = new System.Timers.Timer();
                     Pic32DataRecvTimer.Interval = 200;
@@ -603,8 +644,7 @@ namespace Trilateration_Android
                     TagDataRecvTimer.Interval = 200;
                     TagDataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(tag_DataReceived);
                     TagDataRecvTimer.Start();
-
-
+                    
                     hpcounter1.Start();
                     hpcounter2.Start();
                     hpcounter3.Start();
@@ -615,13 +655,19 @@ namespace Trilateration_Android
 
                     TowardOneTarget.Start();
                     TowardOneTarget.ControlEvent += ControlOut;
+
+                    //Brian+: 2015/04/22 [xmpp]Add send coordinate timer
+                    SendCoordinateTimer = new System.Timers.Timer();
+                    SendCoordinateTimer.Interval = 1000;
+                    SendCoordinateTimer.Elapsed += new System.Timers.ElapsedEventHandler(SendCoordinateHandler);
+                    SendCoordinateTimer.Start();
                 }
             };
-
+            
             buttonTest.Click += (sender, e) =>
             {
                 int ii;
-                //Log.Debug("Brian", "Press buttonTest event!!");
+                
                 myFlag.testing = false;
                 ii = 0;
                 while (true)
@@ -708,17 +754,42 @@ namespace Trilateration_Android
                             //labelVehicle.Visibility = ViewStates.Gone;
                             btnLoad.Visibility = ViewStates.Gone;
                             btnConnect.Enabled = true;
-                            //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
-                            //SetAppearance();
+                            
                         }
 
                     }
 
                 }
-
+                
             };
 
+            
         }
+        
+        //Brian+ 2015/04/20: Add xmpp SendCoordinateTimer handler
+        private void SendCoordinateHandler(object sender, EventArgs e)
+        {
+            int tag_x=0, tag_y=0;
+
+            if (bXmppConnection && bBeaconFind)
+            {
+                tag_x = Convert.ToInt32(myTag.Avg.X / screen2cm_x);
+                tag_y = Convert.ToInt32(myTag.Avg.Y / screen2cm_y);
+
+                strSendMsg = "source " + tag_x.ToString() + " " + tag_y.ToString();
+                var xmpp_msg = new Matrix.Xmpp.Client.Message
+                {
+                    Type = Matrix.Xmpp.MessageType.Chat,
+                    To = strTargetName,
+                    Body = strSendMsg
+                    //To = "rdc02@ea-xmppserver",
+                    //Body = "Hello World!"
+
+                };
+                xmppClient.Send(xmpp_msg);
+            }
+        }
+                
         private void comboTarget_SelectedIndexChanged(object sender, EventArgs e)
         {
             Single diffX;
@@ -753,27 +824,17 @@ namespace Trilateration_Android
             int tmpInt1, tmpInt2;
             String TagRecvData = null;
             Single tmpSingle1;
-            //int DataLen = 0;
-
+           
             TagRecvData = Uart2C.ReceiveMsgUart(tag_open);
 
-            //RunOnUiThread(() => textView.Append("TagRecvData =" + TagRecvData+ "\r\n"));
-            //byte[] tmpBytes = new byte[3];
-
-            //SerialPort p = (SerialPort)sender;
-            //DataLen = TagRecvData.Length;
-            //Log.Debug("Brian", "TagRecvData(Original)=" + TagRecvData);
             byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(TagRecvData);
             //Log.Debug("Brian", "TagRecvData(Convert)=" + ToHexString(byteArray));
             //Log.Debug("Brian", "TagRecvData(Length)=" + byteArray.Length);
-            //while (TagRecvData != null)
+            
             for (int i = 0; i < byteArray.Length; i++)
             {
-                //readbuff = p.ReadByte();
-                //byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(TagRecvData);
                 readbuff = byteArray[i];
-                //RunOnUiThread(() => textView.Append("readbuff =" + readbuff + "\r\n"));
-
+                
                 if (readbuff == 0x23)
                 {
                     Array.Clear(tagbuff, 0, 30);
@@ -848,7 +909,7 @@ namespace Trilateration_Android
 
         }
 
-        //Brian+ for test:
+        //Brian+ for converting byte to hex string:
         public static string ToHexString(byte[] bytes) // 0xae00cf => "AE00CF "
         {
             string hexString = string.Empty;
@@ -867,29 +928,17 @@ namespace Trilateration_Android
         private void driving_DataReceived(object sender, EventArgs e)
         {
             int readbuff;
-            int tmpInt;
             short tmpShort;
             byte[] Pic32RecvData = new byte[255];
-            //String Pic32RecvData = null;
-
-            //Pic32RecvData = Uart2C.ReceiveMsgUart(pic32_open);
-            Pic32RecvData = Uart2C.ReceiveMsgUartByte(pic32_open);
-            //Pic32RecvData = Uart2C.ReceiveMsgUart(pic32_open);
-            //RunOnUiThread(() => textView.Append("Pic32RecvData =" + Pic32RecvData + "\r\n"));
-            //Log.Debug("Brian", "Pic32RecvData(Original)=" + Pic32RecvData);
             
-            //byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(Pic32RecvData);
+            Pic32RecvData = Uart2C.ReceiveMsgUartByte(pic32_open);
             //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Raw)=" + Pic32RecvData);
-            Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
+            //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
             //Log.Debug("Brian", "Pic32RecvData(Length)=" + byteArray.Length);
-            //SerialPort p = (SerialPort)sender;
-            //while (p.BytesToRead > 0)
-            //while (Pic32RecvData != null)
-            //for (int j = 0; j < byteArray.Length; j++)
+           
             for (int j = 0; j < Pic32RecvData.Length; j++)
             {
                 
-                //byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(Pic32RecvData);
                 readbuff = Pic32RecvData[j];
 
                 if (readbuff == 0x53)
@@ -918,7 +967,7 @@ namespace Trilateration_Android
                     else if (tmpShort < -100) tmpShort = -100;
                     myVehicle.encoderR = (short)(myVehicle.encoderR + tmpShort);
                     //Toby's end
-                    Log.Debug("Brian", "myVehicle.compass=" + myVehicle.compass);
+                    //Log.Debug("Brian", "myVehicle.compass=" + myVehicle.compass);
                                         
                     for (int i = 0; i <= 4; i++)
                     {
@@ -974,7 +1023,6 @@ namespace Trilateration_Android
         private void SetAppearance()
         {
             MainWidth = this.linearContent.Width;
-            //MainHeight = this.linearContent.Height - 10;
             MainHeight = this.linearContent.Height;
 
             screen2cm_x = (Single)cfg.MapWidth / (Single)MainWidth;
@@ -982,14 +1030,10 @@ namespace Trilateration_Android
             screen2grid_x = (Single)cfg.GridWidth / (Single)MainWidth;
             screen2grid_y = (Single)cfg.GridHeight / (Single)MainHeight;
 
-            //groupBox2.Left = MainWidth - groupBox2.Width - offset;
-            //textBox1.Left = MainWidth - textBox1.Width - offset;
-            //buttonHide.Left = MainWidth - buttonHide.Width - offset;
-            //labelTable.Left = offset;
-            //labelTable.Top = offset;
-
+            Log.Debug("Brian", "ScreenWidth=" + MainWidth.ToString());
+            Log.Debug("Brian", "ScreenHeight=" + MainHeight.ToString());
+            
             labelVehicle.SetX(offset);
-            //labelVehicle.SetY(MainHeight - labelVehicle.Height - offset);
             labelVehicle.SetY(MainHeight -  40);
 
             labelA.SetX((int)(offset + anchor1.X / screen2cm_x));
@@ -1013,11 +1057,6 @@ namespace Trilateration_Android
             RunOnUiThread(() => labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message);
             RunOnUiThread(() => labelTableC.Text = "    Range,   Rate\r\nC " + anchor3.Message);
                         
-            //Log.Debug("Brian", "anchor3.Message=" + anchor3.Message);
-            // labelVehicle
-            //tmpString = " D=" + myVehicle.compass.ToString() + ", A=" + myCommand.var1.ToString() + ", S=" + myCommand.var2.ToString();
-            //tmpString = tmpString + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
-            
             //Toby's patch
             tmpString = " D=" + myVehicle.compass.ToString() + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
             //tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
@@ -1029,9 +1068,8 @@ namespace Trilateration_Android
             if (myFlag.loc_init_step == 0)
             {
                 myFlag.loc_init_done = false;
-                //textView.Append("Searching for beacon...\r\n");
                 RunOnUiThread(() => textView.Append("Searching for beacon...\r\n"));
-                Log.Debug("Brian", "Searching for beacon...");
+                //Log.Debug("Brian", "Searching for beacon...");
                 if (loc_initial())
                 {
                     myFlag.loc_init_step = 1;
@@ -1039,17 +1077,16 @@ namespace Trilateration_Android
                     Thread local1 = new Thread(new ParameterizedThreadStart(loc_preliminary));
                     local1.IsBackground = true;
                     local1.Start(20);
-                    //textView.Append("Beacon found.\r\n");
                     RunOnUiThread(() => textView.Append("Beacon found.\r\n"));
-                    Log.Debug("Brian", "Beacon found!!");
+                    //Log.Debug("Brian", "Beacon found!!");
+                    bBeaconFind = true;
                 
                 }
                 else
                 {
                     myFlag.loc_init_done = false;
-                    //textView.Append("Beacon doesn't exist.\r\n");
                     RunOnUiThread(() => textView.Append("Beacon doesn't exist.\r\n"));
-                    Log.Debug("Brian", "Beacon doesn't exist!!");
+                    //Log.Debug("Brian", "Beacon doesn't exist!!");
                 }
             }
             if (myFlag.loc_init_step == 2)
@@ -1093,7 +1130,7 @@ namespace Trilateration_Android
                 myEKF.Calculation();
                 myTag.X = myEKF.tagX;
                 myTag.Y = myEKF.tagY;
-                Log.Debug("Brian", "[After_EKF]myTag.X=" + myTag.X + "," + "mytag.Y=" + myTag.Y);
+                //Log.Debug("Brian", "[After_EKF]myTag.X=" + myTag.X + "," + "mytag.Y=" + myTag.Y);
                 renew_anchor_disp();
 
                 for (int j = myTag_Old_X.Length - 1; j >= 1; j--)
@@ -1149,7 +1186,6 @@ namespace Trilateration_Android
                 */
                 //Toby's end
             }
-            //view.Invalidate();
             RunOnUiThread(() => view.Invalidate());
         }
 
@@ -1166,9 +1202,7 @@ namespace Trilateration_Android
                 outbyte[3] = (byte)(command.turn & 0xFF);
                 outbyte[4] = 0x00;
                 outbyte[5] = 0x45;
-                //outbytelen = 6;
-                //drivingPort.Write(outbyte, 0, outbytelen);
-                Log.Debug("Brian", "[OutCommnad]event1 trigger!!");
+                //Log.Debug("Brian", "[OutCommnad]event1 trigger!!");
 
                 Uart2C.SendMsgUart(pic32_open, outbyte);
             }
@@ -1185,9 +1219,7 @@ namespace Trilateration_Android
                 outbyte[3] = (byte)(command.turn & 0xFF);
                 outbyte[4] = 0x00;
                 outbyte[5] = 0x45;
-                //outbytelen = 6;
-                //drivingPort.Write(outbyte, 0, outbytelen);
-                Log.Debug("Brian", "[OutCommnad]event2 trigger!!");
+                //Log.Debug("Brian", "[OutCommnad]event2 trigger!!");
                 Uart2C.SendMsgUart(pic32_open, outbyte);
             }
 
@@ -1237,9 +1269,6 @@ namespace Trilateration_Android
             }
         }
      
-
-
-
         protected override void OnDestroy()
         {
             myFlag.moving = false;
@@ -1253,11 +1282,8 @@ namespace Trilateration_Android
             //fwr.Close();
                         
             base.OnDestroy();
-             
-
         }
-
-
+        
         private bool ReadConfig(string ff)
         {
             if (File.Exists(ff))
@@ -1559,10 +1585,10 @@ namespace Trilateration_Android
             cal_turn(target[target_now].Theta);
             forward_only(1);
             //fwr.Write("[cal_move]forward_only done!!!" + "\r\n");
-            Log.Debug("Brian", "[cal_move]forward_only done!!!");
+            //Log.Debug("Brian", "[cal_move]forward_only done!!!");
             //fwr.Write("[cal_move]myFlag.moving=" + myFlag.moving + "\r\n");
             
-            Log.Debug("Brian", "[cal_move]myFlag.moving=" + myFlag.moving);
+            //Log.Debug("Brian", "[cal_move]myFlag.moving=" + myFlag.moving);
 
             while (myFlag.moving)
             {
@@ -1733,15 +1759,7 @@ namespace Trilateration_Android
                         myFlag.moving = false;
                         target_total = 0;
                         target_now = 1;
-                        
-                        //Brian+ 2015/03/31: Close log file
-                        //fwr.WriteLine("Navigation Stop!!");
-                        //fwr.Close();
-                        //Brian+ for renew UI
-                        //btnDelete.Enabled = false;
-                        //btnGo.Enabled = false;
-                        //view.Invalidate();
-
+                                                
                     }
                 }
                 #endregion
@@ -1796,7 +1814,6 @@ namespace Trilateration_Android
                 Thread.Sleep(100);
             }
         }
-
         private void backward_only(int cycle)
         {
             if (cycle == 0) return;
@@ -1839,7 +1856,6 @@ namespace Trilateration_Android
         private void ControlOut(object sender, EventArgs e)
         {
             byte[] outbyte = new byte[10];
-            int outbytelen = 0;
             short speed = TowardOneTarget.OutSpeed;
             short turn = TowardOneTarget.OutTurn;
 
@@ -1851,9 +1867,7 @@ namespace Trilateration_Android
                 outbyte[3] = (byte)(turn & 0xFF);
                 outbyte[4] = 0x00;
                 outbyte[5] = 0x45;
-                outbytelen = 6;
                 Uart2C.SendMsgUart(pic32_open, outbyte);
-                //drivingPort.Write(outbyte, 0, outbytelen);
             }
             else
             {
@@ -1868,10 +1882,7 @@ namespace Trilateration_Android
                 outbyte[3] = (byte)(turn & 0xFF);
                 outbyte[4] = 0x00;
                 outbyte[5] = 0x45;
-                outbytelen = 6;
                 Uart2C.SendMsgUart(pic32_open, outbyte);
-                //drivingPort.Write(outbyte, 0, outbytelen);
-
             }
         }
 
