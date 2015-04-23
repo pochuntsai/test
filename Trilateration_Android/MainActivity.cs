@@ -63,7 +63,7 @@ namespace Trilateration_Android
         private int[] mOffset = new int[2];
         private int[] mMax = new int[5];
         private int[] mMin = new int[5];
-        
+
         private class_iteration Iteration;
 
         private struct_config cfg = new struct_config();
@@ -90,16 +90,17 @@ namespace Trilateration_Android
         Button buttonTest2, btnDelete, btnGo;
         FrameLayout linearContent;
         TextView labelA, labelB, labelC, labelTag, labelVehicle, labelTable, labelTableC;
-        
+
         //Brian+: add UART releate variables
         int pic32_open = 0;
         int tag_open = 0;
         System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer, SendCoordinateTimer;
         private static System.IO.StreamWriter fwr;
-        
+        //string tag = "Brian";
+
         //Brian+ 2015/04/7: Add xmpp variables
         XmppClient xmppClient = new XmppClient();
-        string strTargetName = "rdc02@ea-xmppserver";
+        string strTargetName = "rdc04@ea-xmppserver";
         string strSrcName = "rdc01@ea-xmppserver";
         string strSrcPass = "rdc01";
         string strSrcDomain = "ea-xmppserver";
@@ -108,7 +109,7 @@ namespace Trilateration_Android
         string strSendMsg, strRecvMsg;
         bool bXmppConnection = false;
         bool bBeaconFind = false;
- 
+
         protected override void OnCreate(Bundle bundle)
         {
             string path = Android.OS.Environment.ExternalStorageDirectory.AbsolutePath;
@@ -195,8 +196,71 @@ namespace Trilateration_Android
             xmppClient.OnRosterStart += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterStart!!"); };
             xmppClient.OnRosterEnd += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterEnd!!"); };
             xmppClient.OnRosterItem += (sender, e) => { Log.Debug("Brian", "OnRosterItem => jid:" + e.RosterItem.Jid.Bare); };
+            
+            xmppClient.OnMessage += (sender, e) => 
+            {
+                string sBody="";
 
-            xmppClient.OnMessage += (sender, e) => { Log.Debug("Brian", "OnMessage => from:" + e.Message.From); };
+                sBody = e.Message.Body;
+                Log.Debug("Brian", "[XMPP]OnMessage => from:" + e.Message.From);
+                Log.Debug("Brian", "[XMPP]Body=" + e.Message.Body);
+
+                target[0].X = myTag.Avg.X;
+                target[0].Y = myTag.Avg.Y;
+                string[] sArray = sBody.Split(' ');
+                for (i = 0; i < sArray.Length; i++)
+                {
+                    Log.Debug("Brian", "[XMPP]Spit str[" + i + "]=" + sArray[i]);
+                }
+                
+                if (String.Compare(sArray[0], "semiauto", true) == 0)
+                {
+                    //semiauto mode
+                    if (String.Compare(sArray[1], "coordinate", true) == 0)
+                    {
+                        //Get target's coordinate
+                        //TODO: (1)Need to check this target is walkable or not, return result to pad
+                        //      (2)Need to check this target need to generate path or not, then fill target information to target[]  
+
+                        //Brian+ : following code test pad's coordinate is mapping to robot correctly 
+                        try
+                        {
+                            target[1].X = (Convert.ToSingle(sArray[2])) * screen2cm_x;
+                            target[1].Y = (Convert.ToSingle(sArray[3])) * screen2cm_y;
+
+                            target_total = 1;
+                            target_now = 1;
+                            btnDelete.Enabled = true;
+                            view.Invalidate();
+                            Log.Debug("Brian", "[XMPP]Target.X=" + sArray[0] + ", Target.Y=" + sArray[1]);
+                        }
+                        catch (FormatException)
+                        {
+                            Log.Debug("Brian", "[XMPP]Can't convert to string!!!");
+                        }
+                    }
+                    else if (String.Compare(sArray[1], "start", true) == 0)
+                    {
+                        //Add robot go code here
+                    }
+
+                }
+                
+                if (String.Compare(sArray[0], "direction", true) == 0)
+                {
+                    //Manual mode
+                    if (pic32_open > 0)
+                    {
+                        SendManualCommand(pic32_open, sArray[1]);
+                    }
+                    else
+                    {
+                        Log.Debug("Brian", "pic32 open fail!!");
+                    }
+                }
+              
+            };
+
             xmppClient.OnIq += (sender, e) => { Log.Debug("Brian", "OnIq => " + e.Iq.From); };
             xmppClient.OnPresence += (sender, e) =>
             {
@@ -292,7 +356,7 @@ namespace Trilateration_Android
             buttonCalCompass.Click += (sender, e) =>
             {
                 byte[] outbyte = new byte[10];
-                int outbytelen = 0;
+                //int outbytelen = 0;
 
                 if (UseWaitCursor)
                 {
@@ -303,7 +367,7 @@ namespace Trilateration_Android
                     outbyte[3] = 0x00;
                     outbyte[4] = 0x00;
                     outbyte[5] = 0x45;
-                    outbytelen = 6;
+                    //outbytelen = 6;
                     Uart2C.SendMsgUart(pic32_open, outbyte);
                     //drivingPort.Write(outbyte, 0, outbytelen);
                 }
@@ -317,7 +381,7 @@ namespace Trilateration_Android
                     outbyte[3] = 0x00;
                     outbyte[4] = 0x00;
                     outbyte[5] = 0x45;
-                    outbytelen = 6;
+                    //outbytelen = 6;
                     Uart2C.SendMsgUart(pic32_open, outbyte);
                     //drivingPort.Write(outbyte, 0, outbytelen);
                 }
@@ -407,6 +471,11 @@ namespace Trilateration_Android
                     for (i = target_now; i <= target_total; i++)
                     {
                         e.DrawCircle((int)(target[i].X / screen2cm_x) - 4, (int)(target[i].Y / screen2cm_y) - 4, 7, pen_target);
+                        //Brian+ for debug
+                        //target_x = int(target[i].X / screen2cm_x);
+                        //target_y = int(target[i].Y / screen2cm_y);
+                        Log.Debug("Brian", "[SCREEN]i=" + i + ", Target.X=" + (int)(target[i].X / screen2cm_x) + ", Target.Y=" + (int)(target[i].Y / screen2cm_y));
+                        
                         e.DrawLine((int)(target[i - 1].X / screen2cm_x), (int)(target[i - 1].Y / screen2cm_y), (int)(target[i].X / screen2cm_x), (int)(target[i].Y / screen2cm_y), pen_target);
                     }
                 }
@@ -657,10 +726,10 @@ namespace Trilateration_Android
                     TowardOneTarget.ControlEvent += ControlOut;
 
                     //Brian+: 2015/04/22 [xmpp]Add send coordinate timer
-                    SendCoordinateTimer = new System.Timers.Timer();
-                    SendCoordinateTimer.Interval = 1000;
-                    SendCoordinateTimer.Elapsed += new System.Timers.ElapsedEventHandler(SendCoordinateHandler);
-                    SendCoordinateTimer.Start();
+                    //SendCoordinateTimer = new System.Timers.Timer();
+                    //SendCoordinateTimer.Interval = 1000;
+                    //SendCoordinateTimer.Elapsed += new System.Timers.ElapsedEventHandler(SendCoordinateHandler);
+                    //SendCoordinateTimer.Start();
                 }
             };
             
@@ -765,11 +834,11 @@ namespace Trilateration_Android
 
             
         }
-        
+
         //Brian+ 2015/04/20: Add xmpp SendCoordinateTimer handler
         private void SendCoordinateHandler(object sender, EventArgs e)
         {
-            int tag_x=0, tag_y=0;
+            int tag_x = 0, tag_y = 0;
 
             if (bXmppConnection && bBeaconFind)
             {
@@ -789,7 +858,7 @@ namespace Trilateration_Android
                 xmppClient.Send(xmpp_msg);
             }
         }
-                
+
         private void comboTarget_SelectedIndexChanged(object sender, EventArgs e)
         {
             Single diffX;
@@ -801,14 +870,14 @@ namespace Trilateration_Android
             if (!myFlag.moving && target_total < 100)
             {
                 target_total++;
-               // target[target_total].X = favorite[comboTarget.SelectedIndex].X;
-               // target[target_total].Y = favorite[comboTarget.SelectedIndex].Y;
+                // target[target_total].X = favorite[comboTarget.SelectedIndex].X;
+                // target[target_total].Y = favorite[comboTarget.SelectedIndex].Y;
                 diffX = target[target_total].X - target[target_total - 1].X;
                 diffY = target[target_total].Y - target[target_total - 1].Y;
                 target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
                 if (target[target_total].Theta < 0) target[target_total].Theta = target[target_total].Theta + 360;
                 else if (target[target_total].Theta > 360) target[target_total].Theta = target[target_total].Theta - 360;
-               
+
                 if (target_total >= 1)
                 {
                     btnDelete.Enabled = true;
@@ -824,17 +893,17 @@ namespace Trilateration_Android
             int tmpInt1, tmpInt2;
             String TagRecvData = null;
             Single tmpSingle1;
-           
+
             TagRecvData = Uart2C.ReceiveMsgUart(tag_open);
 
             byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(TagRecvData);
             //Log.Debug("Brian", "TagRecvData(Convert)=" + ToHexString(byteArray));
             //Log.Debug("Brian", "TagRecvData(Length)=" + byteArray.Length);
-            
+
             for (int i = 0; i < byteArray.Length; i++)
             {
                 readbuff = byteArray[i];
-                
+
                 if (readbuff == 0x23)
                 {
                     Array.Clear(tagbuff, 0, 30);
@@ -930,15 +999,15 @@ namespace Trilateration_Android
             int readbuff;
             short tmpShort;
             byte[] Pic32RecvData = new byte[255];
-            
+
             Pic32RecvData = Uart2C.ReceiveMsgUartByte(pic32_open);
             //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Raw)=" + Pic32RecvData);
             //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
             //Log.Debug("Brian", "Pic32RecvData(Length)=" + byteArray.Length);
-           
+
             for (int j = 0; j < Pic32RecvData.Length; j++)
             {
-                
+
                 readbuff = Pic32RecvData[j];
 
                 if (readbuff == 0x53)
@@ -968,7 +1037,7 @@ namespace Trilateration_Android
                     myVehicle.encoderR = (short)(myVehicle.encoderR + tmpShort);
                     //Toby's end
                     //Log.Debug("Brian", "myVehicle.compass=" + myVehicle.compass);
-                                        
+
                     for (int i = 0; i <= 4; i++)
                     {
                         myVehicle.sonic[i] = drivingbuff[7 + i];
@@ -1032,9 +1101,9 @@ namespace Trilateration_Android
 
             Log.Debug("Brian", "ScreenWidth=" + MainWidth.ToString());
             Log.Debug("Brian", "ScreenHeight=" + MainHeight.ToString());
-            
+
             labelVehicle.SetX(offset);
-            labelVehicle.SetY(MainHeight -  40);
+            labelVehicle.SetY(MainHeight - 40);
 
             labelA.SetX((int)(offset + anchor1.X / screen2cm_x));
             labelA.SetY((int)(offset + anchor1.Y / screen2cm_y));
@@ -1056,7 +1125,7 @@ namespace Trilateration_Android
             //labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message;
             RunOnUiThread(() => labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message);
             RunOnUiThread(() => labelTableC.Text = "    Range,   Rate\r\nC " + anchor3.Message);
-                        
+
             //Toby's patch
             tmpString = " D=" + myVehicle.compass.ToString() + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
             //tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
@@ -1064,7 +1133,7 @@ namespace Trilateration_Android
 
             //labelVehicle.Text = tmpString;
             RunOnUiThread(() => labelVehicle.Text = tmpString);
-            
+
             if (myFlag.loc_init_step == 0)
             {
                 myFlag.loc_init_done = false;
@@ -1080,7 +1149,7 @@ namespace Trilateration_Android
                     RunOnUiThread(() => textView.Append("Beacon found.\r\n"));
                     //Log.Debug("Brian", "Beacon found!!");
                     bBeaconFind = true;
-                
+
                 }
                 else
                 {
@@ -1112,7 +1181,7 @@ namespace Trilateration_Android
             if (myFlag.loc_init_done)
             {
                 Single[] tmpSingleA = new Single[3];
-                
+
                 //Toby's patch
                 hpcounter4.Stop();
                 myEKF.dT = (Single)hpcounter4.Duration * 1000f;
@@ -1122,7 +1191,7 @@ namespace Trilateration_Android
                 myVehicle.encoderL = 0;
                 myVehicle.encoderR = 0;
                 //Toby's done
-                
+
                 tmpSingleA[0] = anchor1.Range;
                 tmpSingleA[1] = anchor2.Range;
                 tmpSingleA[2] = anchor3.Range;
@@ -1165,7 +1234,7 @@ namespace Trilateration_Android
                     //fwr.WriteLine("myTag.X=" + myTag.X.ToString("f1") + " ," + "myTag.Y=" + myTag.Y.ToString("f1"));
                     //fwr.WriteLine("----------------------------------------------");
                 }
-                
+
                 //Toby's patch
                 /* 
                 if (checkBoxRecord.Checked)
@@ -1187,6 +1256,36 @@ namespace Trilateration_Android
                 //Toby's end
             }
             RunOnUiThread(() => view.Invalidate());
+        }
+
+        //Brian+ 2015/04/23: Add SendManualCommand() for sending manual command to PIC32
+        private void SendManualCommand(int fd, string direction)
+        {
+            byte[] outbyte = new byte[6];
+            
+            outbyte[0] = 0x53;
+            outbyte[1] = 0x01;
+            outbyte[3] = 0x00;
+            outbyte[4] = 0x00;
+            outbyte[5] = 0x45;
+            if (String.Compare(direction, "forward", true) == 0)
+                outbyte[2] = 0x01;
+            else if (String.Compare(direction, "backward", true) == 0)
+                outbyte[2] = 0x02;
+            else if (String.Compare(direction, "left", true) == 0)
+                outbyte[2] = 0x04;
+            else if (String.Compare(direction, "right", true) == 0)
+                outbyte[2] = 0x08;
+            else if (String.Compare(direction, "forRig", true) == 0)
+                outbyte[2] = 0x10;
+            else if (String.Compare(direction, "bacRig", true) == 0)
+                outbyte[2] = 0x20;
+            else if (String.Compare(direction, "forLeft", true) == 0)
+                outbyte[2] = 0x40;
+            else if (String.Compare(direction, "bacLeft", true) == 0)
+                outbyte[2] = 0x80;
+
+            Uart2C.SendMsgUart(pic32_open, outbyte);
         }
 
         private void OutCommand(move_command command)
@@ -1259,7 +1358,7 @@ namespace Trilateration_Android
                     anchor3.Updated = false;
                     anchor3.Rate = anchor3.Rate + 1;
                 }
-                
+
                 tmpSingle1 = (Single)(anchor1.Rate * myTag.Rate / Rate_total);
                 anchor1.Message = anchor1.Range.ToString("f1") + " cm  " + tmpSingle1.ToString("f1") + " %";
                 tmpSingle1 = (Single)(anchor2.Rate * myTag.Rate / Rate_total);
@@ -1268,7 +1367,7 @@ namespace Trilateration_Android
                 anchor3.Message = anchor3.Range.ToString("f1") + " cm  " + tmpSingle1.ToString("f1") + " %";
             }
         }
-     
+
         protected override void OnDestroy()
         {
             myFlag.moving = false;
@@ -1280,10 +1379,10 @@ namespace Trilateration_Android
             //fwr.Write("{0:mm:ss} ", DateTime.Now);
             //fwr.Write("Program End\r\n");
             //fwr.Close();
-                        
+
             base.OnDestroy();
         }
-        
+
         private bool ReadConfig(string ff)
         {
             if (File.Exists(ff))
@@ -1587,7 +1686,7 @@ namespace Trilateration_Android
             //fwr.Write("[cal_move]forward_only done!!!" + "\r\n");
             //Log.Debug("Brian", "[cal_move]forward_only done!!!");
             //fwr.Write("[cal_move]myFlag.moving=" + myFlag.moving + "\r\n");
-            
+
             //Log.Debug("Brian", "[cal_move]myFlag.moving=" + myFlag.moving);
 
             while (myFlag.moving)
@@ -1609,7 +1708,7 @@ namespace Trilateration_Android
                     myCommand.turn = ob.OutTurn;
                 }
                 else 
-#endif          
+#endif
                 if (myFlag.sampling)
                 {
                     myFlag.sampling = false;
@@ -1743,7 +1842,7 @@ namespace Trilateration_Android
                     myCommand.arrived = false;
                     turn_1m = false;
                     turn_2m = false;
-                    
+
                     if (target_now < target_total)
                     {
                         target_now++;
@@ -1759,12 +1858,12 @@ namespace Trilateration_Android
                         myFlag.moving = false;
                         target_total = 0;
                         target_now = 1;
-                                                
+
                     }
                 }
                 #endregion
                 // at last, output the command
-                
+
                 OutCommand(myCommand);
                 Thread.Sleep(90);
                 //fwr.Write("[cal_move]block3 entered!!" + "\r\n");
@@ -1850,7 +1949,7 @@ namespace Trilateration_Android
                 }
                 stdev = (Single)Math.Sqrt(sum / len);
             }
-            
+
         }
 
         private void ControlOut(object sender, EventArgs e)
@@ -1926,7 +2025,7 @@ namespace Trilateration_Android
     {
         public event EventHandler<Canvas> OnDrawing;
         public event EventHandler<MotionEvent> OnTouching;
-        
+
         public DrawView(Context context)
             : base(context)
         {
