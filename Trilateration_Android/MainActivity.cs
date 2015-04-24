@@ -1264,7 +1264,7 @@ namespace Trilateration_Android
             byte[] outbyte = new byte[6];
             
             outbyte[0] = 0x53;
-            outbyte[1] = 0x01;
+            outbyte[1] = 0x11;
             outbyte[3] = 0x00;
             outbyte[4] = 0x00;
             outbyte[5] = 0x45;
@@ -1273,18 +1273,19 @@ namespace Trilateration_Android
             else if (String.Compare(direction, "backward", true) == 0)
                 outbyte[2] = 0x02;
             else if (String.Compare(direction, "left", true) == 0)
-                outbyte[2] = 0x04;
+                outbyte[2] = 0x03;
             else if (String.Compare(direction, "right", true) == 0)
-                outbyte[2] = 0x08;
+                outbyte[2] = 0x04;
             else if (String.Compare(direction, "forRig", true) == 0)
-                outbyte[2] = 0x10;
+                outbyte[2] = 0x07;
             else if (String.Compare(direction, "bacRig", true) == 0)
-                outbyte[2] = 0x20;
+                outbyte[2] = 0x08;
             else if (String.Compare(direction, "forLeft", true) == 0)
-                outbyte[2] = 0x40;
+                outbyte[2] = 0x05;
             else if (String.Compare(direction, "bacLeft", true) == 0)
-                outbyte[2] = 0x80;
+                outbyte[2] = 0x06;
 
+            Log.Debug("Brian", "outbyte[]=" + ToHexString(outbyte));
             Uart2C.SendMsgUart(pic32_open, outbyte);
         }
 
