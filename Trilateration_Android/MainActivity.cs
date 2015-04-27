@@ -91,7 +91,7 @@ namespace Trilateration_Android
         FrameLayout linearContent;
         TextView labelA, labelB, labelC, labelTag, labelVehicle, labelTable, labelTableC;
 
-        //Brian+: add UART releate variables
+        //Brian+: add UART related variables
         int pic32_open = 0;
         int tag_open = 0;
         System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer, SendCoordinateTimer;
@@ -100,7 +100,7 @@ namespace Trilateration_Android
 
         //Brian+ 2015/04/7: Add xmpp variables
         XmppClient xmppClient = new XmppClient();
-        string strTargetName = "rdc04@ea-xmppserver";
+        string strTargetName = "rdc02@ea-xmppserver";
         string strSrcName = "rdc01@ea-xmppserver";
         string strSrcPass = "rdc01";
         string strSrcDomain = "ea-xmppserver";
@@ -109,6 +109,9 @@ namespace Trilateration_Android
         string strSendMsg, strRecvMsg;
         bool bXmppConnection = false;
         bool bBeaconFind = false;
+        string sScheduleTime;
+        Point PadTarget = new Point();
+        //int iPadTargetCount = 0;
 
         protected override void OnCreate(Bundle bundle)
         {
@@ -200,54 +203,163 @@ namespace Trilateration_Android
             xmppClient.OnMessage += (sender, e) => 
             {
                 string sBody="";
-
+                
                 sBody = e.Message.Body;
                 Log.Debug("Brian", "[XMPP]OnMessage => from:" + e.Message.From);
                 Log.Debug("Brian", "[XMPP]Body=" + e.Message.Body);
 
-                target[0].X = myTag.Avg.X;
-                target[0].Y = myTag.Avg.Y;
                 string[] sArray = sBody.Split(' ');
                 for (i = 0; i < sArray.Length; i++)
                 {
-                    Log.Debug("Brian", "[XMPP]Spit str[" + i + "]=" + sArray[i]);
+                    Log.Debug("Brian", "[XMPP]Spilt str[" + i + "]=" + sArray[i]);
                 }
                 
+                //semiauto mode
                 if (String.Compare(sArray[0], "semiauto", true) == 0)
                 {
-                    //semiauto mode
                     if (String.Compare(sArray[1], "coordinate", true) == 0)
                     {
+
+                        PadTarget.X = Convert.ToInt16(sArray[2]);
+                        PadTarget.Y = Convert.ToInt16(sArray[3]);
+                        GenCornerCoodinate(PadTarget.X, PadTarget.Y);
+                        
+                        /*
+                        short walkable;
+                        Single diffX;
+                        Single diffY;
+                        Single tmpSingle1, tmpSingle2, tmpSingle3;
+                        Point PadTarget = new Point();
+
                         //Get target's coordinate
-                        //TODO: (1)Need to check this target is walkable or not, return result to pad
-                        //      (2)Need to check this target need to generate path or not, then fill target information to target[]  
+                        //iPadTargetCount++;
+                        PadTarget.X = Convert.ToInt16(sArray[2]);
+                        PadTarget.Y = Convert.ToInt16(sArray[3]);
+                        
+                        Point a = new Point();
+                        Point b = new Point();
+                        
+                        walkable = myMap.CheckWalk((int)(PadTarget.X * screen2grid_x), (int)(PadTarget.Y * screen2grid_y));
 
-                        //Brian+ : following code test pad's coordinate is mapping to robot correctly 
-                        try
-                        {
-                            target[1].X = (Convert.ToSingle(sArray[2])) * screen2cm_x;
-                            target[1].Y = (Convert.ToSingle(sArray[3])) * screen2cm_y;
+                        tmpSingle1 = target[target_total].X - PadTarget.X * screen2cm_x;
+                        tmpSingle2 = target[target_total].Y - PadTarget.Y * screen2cm_y;
+                        tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
+                        if (tmpSingle3 < 400) return;
 
-                            target_total = 1;
-                            target_now = 1;
-                            btnDelete.Enabled = true;
-                            view.Invalidate();
-                            Log.Debug("Brian", "[XMPP]Target.X=" + sArray[0] + ", Target.Y=" + sArray[1]);
-                        }
-                        catch (FormatException)
+                        if (walkable != 0)
                         {
-                            Log.Debug("Brian", "[XMPP]Can't convert to string!!!");
+                           //Can not walk, send message to pad
                         }
+                        else
+                        {
+                            target[0].X = myTag.Avg.X;
+                            target[0].Y = myTag.Avg.Y;
+                            //target_total++?
+                            
+                            if (!myFlag.moving && target_total < 100)
+                            {
+                                a.X = (int)(target[target_total].X / screen2cm_x * screen2grid_x);
+                                a.Y = (int)(target[target_total].Y / screen2cm_y * screen2grid_y);
+                                b.X = (int)(PadTarget.X * screen2grid_x);
+                                b.Y = (int)(PadTarget.Y * screen2grid_y);
+                                myMap.initial_position(a, b);
+                                if (myMap.Autoflag == true) myMap.action();
+                                RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
+                               
+                                foreach (Point p in myMap.path_Result)
+                                {
+                                    target_total++;
+                                    target[target_total].X = p.X / screen2grid_x * screen2cm_x;
+                                    target[target_total].Y = p.Y / screen2grid_y * screen2cm_y;
+                                    diffX = target[target_total].X - target[target_total - 1].X;
+                                    diffY = target[target_total].Y - target[target_total - 1].Y;
+                                    target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
+                                    if (target[target_total].Theta < -180) target[target_total].Theta = target[target_total].Theta + 360;
+                                    else if (target[target_total].Theta > 180) target[target_total].Theta = target[target_total].Theta - 360;
+                                    RunOnUiThread(() => textView.Append(target[target_total].X.ToString() + ", " + target[target_total].Y.ToString() + ", " + target[target_total].Theta.ToString("f2") + "\r\n"));
+                                                               
+                                }
+                            }
+
+                            if (target_total >= 1)
+                            {
+
+                                RunOnUiThread(() => btnDelete.Enabled = true);
+                                RunOnUiThread(() => btnGo.Enabled = true);
+                            }
+                            */
+                            //Add send corner coordinate to pad code here
+                            string sCornerX, sCornerY;
+                            if (target_total >= 1)
+                            { 
+                                //Send prepare to send coordinate message 
+                                var prepare_msg = new Matrix.Xmpp.Client.Message
+                                {
+                                    Type = Matrix.Xmpp.MessageType.Chat,
+                                    To = strTargetName,
+                                    Body = "semiauto corner start"
+                                };
+                                xmppClient.Send(prepare_msg);
+
+                                for (int i=1; i<=target_total; i++)
+                                {
+                                    sCornerX = Convert.ToString((int)(target[i].X / screen2cm_x));
+                                    sCornerY = Convert.ToString((int)(target[i].Y / screen2cm_y));
+                                    strSendMsg = "semiauto corner " + sCornerX + " " + sCornerY;
+                                    
+                                    var cornor_msg = new Matrix.Xmpp.Client.Message
+                                    {
+                                        Type = Matrix.Xmpp.MessageType.Chat,
+                                        To = strTargetName,
+                                        Body = strSendMsg
+                                        //To = "rdc02@ea-xmppserver",
+                                        //Body = "Hello World!"
+
+                                    };
+                                    Log.Debug("Brian", "[XMPP][semi-auto]target_total=" + target_total + ", Body=" + strSendMsg);
+                                    xmppClient.Send(cornor_msg);
+                                }
+
+                                //Send end to send coordinate message 
+                                var end_msg = new Matrix.Xmpp.Client.Message
+                                {
+                                    Type = Matrix.Xmpp.MessageType.Chat,
+                                    To = strTargetName,
+                                    Body = "semiauto corner end"
+                                    //To = "rdc02@ea-xmppserver",
+                                    //Body = "Hello World!"
+
+                                };
+                                xmppClient.Send(end_msg);
+                            }    
+
+                        //} //Brian+ for add GenCornerCoordinate()
+                            //RunOnUiThread(() => view.Invalidate());
                     }
                     else if (String.Compare(sArray[1], "start", true) == 0)
                     {
                         //Add robot go code here
+                        if (!myFlag.moving)
+                        {
+                            previous_step.X = myTag.X;
+                            previous_step.Y = myTag.Y;
+
+                            myFlag.moving = true;
+                            //wr.Write(DateTime.Now.ToString("HH:mm:ss ") + "New Route");
+                            //wr.Write("\r\n");
+
+                            Thread dispatchloop = new Thread(new ThreadStart(Dispatch));
+                            dispatchloop.IsBackground = true;
+                            dispatchloop.Priority = System.Threading.ThreadPriority.BelowNormal;
+                            dispatchloop.Start();
+                                                        
+                        }
                     }
 
                 }
-                
-                if (String.Compare(sArray[0], "direction", true) == 0)
+                else if (String.Compare(sArray[0], "direction", true) == 0)
                 {
+
                     //Manual mode
                     if (pic32_open > 0)
                     {
@@ -258,7 +370,30 @@ namespace Trilateration_Android
                         Log.Debug("Brian", "pic32 open fail!!");
                     }
                 }
-              
+                else if (String.Compare(sArray[0], "auto", true) == 0)
+                {
+                    //Auto mode
+                    if (String.Compare(sArray[1], "scheduledTime", true) == 0)
+                    {
+                        sScheduleTime = sArray[2];
+                    }
+                    else if (String.Compare(sArray[1], "coordinate", true) == 0)
+                    {
+                        //Add auto mode code here
+                        
+                        //Auto mode setup completely
+                        var autoend_msg = new Matrix.Xmpp.Client.Message
+                        {
+                                    Type = Matrix.Xmpp.MessageType.Chat,
+                                    To = strTargetName,
+                                    Body = "semiauto setUpDone"
+                                    //To = "rdc02@ea-xmppserver",
+                                    //Body = "Hello World!"
+
+                        };
+                        xmppClient.Send(autoend_msg);
+                    }
+                }
             };
 
             xmppClient.OnIq += (sender, e) => { Log.Debug("Brian", "OnIq => " + e.Iq.From); };
@@ -472,9 +607,7 @@ namespace Trilateration_Android
                     {
                         e.DrawCircle((int)(target[i].X / screen2cm_x) - 4, (int)(target[i].Y / screen2cm_y) - 4, 7, pen_target);
                         //Brian+ for debug
-                        //target_x = int(target[i].X / screen2cm_x);
-                        //target_y = int(target[i].Y / screen2cm_y);
-                        Log.Debug("Brian", "[SCREEN]i=" + i + ", Target.X=" + (int)(target[i].X / screen2cm_x) + ", Target.Y=" + (int)(target[i].Y / screen2cm_y));
+                        //Log.Debug("Brian", "[SCREEN]i=" + i + ", Target.X=" + (int)(target[i].X / screen2cm_x) + ", Target.Y=" + (int)(target[i].Y / screen2cm_y));
                         
                         e.DrawLine((int)(target[i - 1].X / screen2cm_x), (int)(target[i - 1].Y / screen2cm_y), (int)(target[i].X / screen2cm_x), (int)(target[i].Y / screen2cm_y), pen_target);
                     }
@@ -542,20 +675,10 @@ namespace Trilateration_Android
                      
                      if (walkable != 0)
                      {
-                         //pictureBoxWalkable.Image = Properties.Resources.vehicleoff;
-                         //pictureBoxWalkable.Top = e.Y;
-                         //pictureBoxWalkable.Left = e.X;
-                         //pictureBoxWalkable.Refresh();
-                         //pictureBoxWalkable.Visible = true;
+                         
                      }
                      else
                      {
-                         //pictureBoxWalkable.Image = Properties.Resources.vehicleon;
-                         //pictureBoxWalkable.Top = e.Y;
-                         //pictureBoxWalkable.Left = e.X;
-                         //pictureBoxWalkable.Refresh();
-                         //pictureBoxWalkable.Visible = true;
-
                          target[0].X = myTag.Avg.X;
                          target[0].Y = myTag.Avg.Y;
 
@@ -887,6 +1010,71 @@ namespace Trilateration_Android
             view.Invalidate();
         }
 
+        //Brian+ 2015/04/27: Add GenCornerCoodinate() to generate corner's coordinate
+        
+        public void GenCornerCoodinate(int TargetX, int TargetY)
+        {
+            short walkable;
+            Single diffX;
+            Single diffY;
+            Single tmpSingle1, tmpSingle2, tmpSingle3;
+            //Point PadTarget = new Point();
+
+            Point a = new Point();
+            Point b = new Point();
+
+            walkable = myMap.CheckWalk((int)(TargetX * screen2grid_x), (int)(TargetY * screen2grid_y));
+
+            tmpSingle1 = target[target_total].X - TargetX * screen2cm_x;
+            tmpSingle2 = target[target_total].Y - TargetY * screen2cm_y;
+            tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
+            if (tmpSingle3 < 400) return;
+
+            if (walkable != 0)
+            {
+                //Can not walk, send message to pad
+            }
+            else
+            {
+                target[0].X = myTag.Avg.X;
+                target[0].Y = myTag.Avg.Y;
+                //target_total++?
+
+                if (!myFlag.moving && target_total < 100)
+                {
+                    a.X = (int)(target[target_total].X / screen2cm_x * screen2grid_x);
+                    a.Y = (int)(target[target_total].Y / screen2cm_y * screen2grid_y);
+                    b.X = (int)(TargetX * screen2grid_x);
+                    b.Y = (int)(TargetY * screen2grid_y);
+                    myMap.initial_position(a, b);
+                    if (myMap.Autoflag == true) myMap.action();
+                    RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
+
+                    foreach (Point p in myMap.path_Result)
+                    {
+                        target_total++;
+                        target[target_total].X = p.X / screen2grid_x * screen2cm_x;
+                        target[target_total].Y = p.Y / screen2grid_y * screen2cm_y;
+                        diffX = target[target_total].X - target[target_total - 1].X;
+                        diffY = target[target_total].Y - target[target_total - 1].Y;
+                        target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
+                        if (target[target_total].Theta < -180) target[target_total].Theta = target[target_total].Theta + 360;
+                        else if (target[target_total].Theta > 180) target[target_total].Theta = target[target_total].Theta - 360;
+                        RunOnUiThread(() => textView.Append(target[target_total].X.ToString() + ", " + target[target_total].Y.ToString() + ", " + target[target_total].Theta.ToString("f2") + "\r\n"));
+
+                    }
+                }
+
+                if (target_total >= 1)
+                {
+
+                    RunOnUiThread(() => btnDelete.Enabled = true);
+                    RunOnUiThread(() => btnGo.Enabled = true);
+                    RunOnUiThread(() => view.Invalidate());
+                }
+            }
+        }
+        
         private void tag_DataReceived(object sender, EventArgs e)
         {
             int readbuff;
@@ -1859,6 +2047,19 @@ namespace Trilateration_Android
                         myFlag.moving = false;
                         target_total = 0;
                         target_now = 1;
+                        
+                        //Brian+ 2015/04/27: Send finish msg when robot reach target
+                        //Send end to send coordinate message 
+                        var reach_msg = new Matrix.Xmpp.Client.Message
+                        {
+                            Type = Matrix.Xmpp.MessageType.Chat,
+                            To = strTargetName,
+                            Body = "semiauto end"
+                            //To = "rdc02@ea-xmppserver",
+                            //Body = "Hello World!"
+
+                        };
+                        xmppClient.Send(reach_msg);
 
                     }
                 }
