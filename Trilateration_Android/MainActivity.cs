@@ -232,7 +232,7 @@ namespace Trilateration_Android
                         PadTarget.X = Convert.ToInt16(sArray[2]);
                         PadTarget.Y = Convert.ToInt16(sArray[3]);
                         //GenCornerCoodinateTest(PadTarget.X, PadTarget.Y);
-                        GenCornerCoodinate(PadTarget.X, PadTarget.Y);
+                        GenCornerCoodinate(PadTarget.X, PadTarget.Y, 2);
                         //AutoTarget = GenCornerCoodinate(PadTarget.X, PadTarget.Y);
                         
                         /*
@@ -397,11 +397,49 @@ namespace Trilateration_Android
                         //if (!myFlag.moving)
                         PadTarget.X = Convert.ToInt16(sArray[2]);
                         PadTarget.Y = Convert.ToInt16(sArray[3]);
-                        GenCornerCoodinate(PadTarget.X, PadTarget.Y);
+                        GenCornerCoodinate(PadTarget.X, PadTarget.Y, 3);
 
+                        string sCornerX, sCornerY;
+                        if (target_total >= 1)
+                        {
+                            //Send prepare to send coordinate message 
+                            var prepare_msg = new Matrix.Xmpp.Client.Message
+                            {
+                                Type = Matrix.Xmpp.MessageType.Chat,
+                                To = strTargetName,
+                                Body = "auto corner start"
+                            };
+                            xmppClient.Send(prepare_msg);
+
+                            //Brian+ 2015/04/29: Only send corner coordinate to pad
+                            for (int i = 1; i < target_total; i++)
+                            {
+                                sCornerX = Convert.ToString((int)(target[i].X / screen2cm_x));
+                                sCornerY = Convert.ToString((int)(target[i].Y / screen2cm_y));
+                                strSendMsg = "auto corner " + sCornerX + " " + sCornerY;
+
+                                var cornor_msg = new Matrix.Xmpp.Client.Message
+                                {
+                                    Type = Matrix.Xmpp.MessageType.Chat,
+                                    To = strTargetName,
+                                    Body = strSendMsg
+                                };
+                                Log.Debug("Brian", "[XMPP][auto]target_total=" + target_total + ", Body=" + strSendMsg);
+                                xmppClient.Send(cornor_msg);
+                            }
+
+                            //Send end to send coordinate message 
+                            var end_msg = new Matrix.Xmpp.Client.Message
+                            {
+                                Type = Matrix.Xmpp.MessageType.Chat,
+                                To = strTargetName,
+                                Body = "auto corner end"
+                            };
+                            xmppClient.Send(end_msg);
+                        }    
+                        
                         AutoModeTimer = new System.Timers.Timer();
                         AutoModeTimer.Interval = 1000 * 60;
-                                                
                         AutoModeTimer.Elapsed += new System.Timers.ElapsedEventHandler(AutoModeTimerHandler);
                         AutoModeTimer.Start();
                                               
@@ -1142,39 +1180,44 @@ namespace Trilateration_Android
             }
         }
         
-        
         //Brian+ 2015/04/27: Add GenCornerCoodinate() to generate corner's coordinate
-        
-        public void GenCornerCoodinate(int TargetX, int TargetY)
+        public void GenCornerCoodinate(int TargetX, int TargetY, int Mode)
         //public struct_PointF[] GenCornerCoodinate(int TargetX, int TargetY)
         {
             short walkable;
             Single diffX;
             Single diffY;
             Single tmpSingle1, tmpSingle2, tmpSingle3;
-            //Point PadTarget = new Point();
-
+            
             Point a = new Point();
             Point b = new Point();
 
             //Brian+ mark for test
             walkable = myMap.CheckWalk((int)(TargetX * screen2grid_x), (int)(TargetY * screen2grid_y));
-            //walkable = 0;
-
+            
             //Ignore distance < 20cm(400/20) between 2 points
             tmpSingle1 = target[target_total].X - TargetX * screen2cm_x;
             tmpSingle2 = target[target_total].Y - TargetY * screen2cm_y;
             tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
             //if (tmpSingle3 < 400) return; //Brian+: temporally marked for testing 
-
+            
+            //Brian+ 2015/04/29: reset target_total and target_now to prevent old setting affect new setting   
+            target_total = 0;
+            target_now = 1;
+            
             if (walkable != 0)
             {
                 //Can not walk, send message to pad
+                if (Mode == 2)
+                    strSendMsg = "semiauto walkable 0";
+                else if (Mode == 3)
+                    strSendMsg = "auto walkable 0";
+
                 var walkable_msg = new Matrix.Xmpp.Client.Message
                 {
                     Type = Matrix.Xmpp.MessageType.Chat,
                     To = strTargetName,
-                    Body = "walkable 0"
+                    Body = strSendMsg
                 };
                 xmppClient.Send(walkable_msg);
 
@@ -1182,11 +1225,21 @@ namespace Trilateration_Android
             }
             else
             {
+                if (Mode == 2)
+                    strSendMsg = "semiauto walkable 1";
+                else if (Mode == 3)
+                    strSendMsg = "auto walkable 1";
+
+                var walkable_msg = new Matrix.Xmpp.Client.Message
+                {
+                    Type = Matrix.Xmpp.MessageType.Chat,
+                    To = strTargetName,
+                    Body = strSendMsg
+                };
+                xmppClient.Send(walkable_msg);
+                
                 target[0].X = myTag.Avg.X;
                 target[0].Y = myTag.Avg.Y;
-                //target_total++?
-
-                //Brian+ mark for test
                 
                 if (!myFlag.moving && target_total < 100)
                 {
