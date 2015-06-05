@@ -6,6 +6,7 @@ using Android.Content;
 using Android.Runtime;
 using Android.Views;
 using Android.Widget;
+
 using Android.OS;
 using Android.Graphics;
 using System.Linq;
@@ -15,6 +16,7 @@ using Android.Graphics.Drawables;
 using System.Threading;
 using Idv.Android.Hellouart;
 using Android.Util;
+using System.Collections.Generic;
 
 using Matrix.Xmpp.Client;
 
@@ -29,42 +31,32 @@ namespace Trilateration_Android
         private int MainWidth, MainHeight;
         private int offset;
         private System.Drawing.Point mapsize;
-        private Single range_ratio;
 
-        //private Single x_scale, y_scale;
-        //private Single screen2map_x, screen2map_y;
         private Single screen2grid_x, screen2grid_y;
         private Single screen2cm_x, screen2cm_y;
-
 
         private int target_total;
         private int target_now;
         private Single[] err = new Single[5];
-        private struct_PointF mouse_position = new struct_PointF();
-        private struct_PointF previous_step = new struct_PointF();
+        //private struct_PointF mouse_position = new struct_PointF();
         private struct_PointF[] target = new struct_PointF[100];
-        private struct_Location[] favorite = new struct_Location[20];
+        private struct_Location[] favorite = new struct_Location[50];
 
         private beacon anchor1 = new beacon();
         private beacon anchor2 = new beacon();
         private beacon anchor3 = new beacon();
+        private beacon anchor4 = new beacon();
+        private beacon anchor5 = new beacon();
+        private beacon anchor6 = new beacon();
         private beacon myTag = new beacon();
         private Single[] myTag_Old_X = new Single[5];
         private Single[] myTag_Old_Y = new Single[5];
 
-        //public SerialPort tagPort;
-        //public SerialPort drivingPort;
         private int tagbufflen;
         private byte[] tagbuff = new byte[30];
-        private int drivingbufflen;
-        private byte[] drivingbuff = new byte[30];
 
-        private int[] mField = new int[3];
-        private int[] mOffset = new int[2];
-        private int[] mMax = new int[5];
-        private int[] mMin = new int[5];
-
-        private class_iteration Iteration;
+        private string ManualCommand;
+        private short ManualCount;
 
         private struct_config cfg = new struct_config();
         private move_command myCommand = new move_command();
@@ -73,17 +65,15 @@ namespace Trilateration_Android
         private Map myMap = new Map();
         private class_EKFL5 myEKF;
 
-        private static System.IO.StreamWriter wr;
+        public static System.IO.StreamWriter wr;
 
-        HighPerformanceCounter hpcounter1 = new HighPerformanceCounter();
-        HighPerformanceCounter hpcounter2 = new HighPerformanceCounter();
-        HighPerformanceCounter hpcounter3 = new HighPerformanceCounter();
         HighPerformanceCounter hpcounter4 = new HighPerformanceCounter();
 
         // for testing
         private int test_count = 0;
         private bool test_start;
         private string test_str;
+		
         obstacle ob;
         DrawView view;
         TextView textView;
@@ -94,9 +84,8 @@ namespace Trilateration_Android
         //Brian+: add UART related variables
         int pic32_open = 0;
         int tag_open = 0;
-        System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer, SendCoordinateTimer, AutoModeTimer;
+        System.Timers.Timer timer1, Pic32DataRecvTimer, TagDataRecvTimer, SendCoordinateTimer, AutoModeTimer, ManModeTimer;
         private static System.IO.StreamWriter fwr;
-        //string tag = "Brian";
 
         //Brian+ 2015/04/7: Add xmpp variables
         XmppClient xmppClient = new XmppClient();
@@ -109,20 +98,27 @@ namespace Trilateration_Android
         string strSendMsg, strRecvMsg;
         bool bXmppConnection = false;
         bool bBeaconFind = false;
-        string sScheduleTime;
+        DateTime dtScheduleTime;
+        int iScheduleTime;
         Point PadTarget = new Point();
-        private struct_PointF[] AutoTarget = new struct_PointF[100];
+        //private struct_PointF[] AutoTarget = new struct_PointF[100];
+        int NaviMode = 0, TargetNotWalkable = 0;
+        int AutoTargetAmount = 0, AutoTargetNow = 0;
+        struct_AutoTarget[] AutoTarget = new struct_AutoTarget[10];
+
         //int iPadTargetCount = 0;
 
         protected override void OnCreate(Bundle bundle)
         {
             string path = Android.OS.Environment.ExternalStorageDirectory.AbsolutePath;
+            //string path = "/storage/sdcard0/";
             path=System.IO.Path.Combine(path, "Trilateration_Android");
             ComPortDataReady = 0;
             target_total = 0;
             target_now = 1;
             myFlag.screen_ready = false;
-            
+            myFlag.loc_init_done = false;
+
             // set initial value
             anchor1.X = 50;
             anchor2.X = 150;
@@ -147,8 +143,6 @@ namespace Trilateration_Android
             // obstacle-avoid algorithm
             ob = new obstacle(80, 0.1f);
 
-            Iteration = new class_iteration();
-            
             base.OnCreate(bundle);
             this.RequestWindowFeature(WindowFeatures.NoTitle);
             SetContentView(Resource.Layout.Main);
@@ -172,20 +166,18 @@ namespace Trilateration_Android
             labelTableC = this.FindViewById<TextView>(Resource.Id.labelTableC);   
             Toast.MakeText(this, path, ToastLength.Long).Show();
 
-            btnLoad.SetX(300);
-
             //Brian+ 2015/04/17: Add Matrix license key here
-            string lic = @"eJxkkFtPg0AQhf+K6WujS6v2YqYbCWClFyzFXt+2sOAmsOBeSuHX22q9v0xm
-                           5pszczIwYSHlkl4cspTLQYMklzKPVUkEvUs/UAPDTOSRDpUb4UDpiOWAvjvg
-                           a8IVUxVuAfrKwdJS5RkVGDySUezsSaqJygWg9xqsPCsIrz4By/nF2QqgTwZO
-                           RliKJUmpvP/h7Co6Dn2w4/DXoUUREUWdQ8EEtY8ZbhutjnHTNgD9Q+BKm2Y5
-                           VkIfd50LOMXf+lvj9qT/AyBgCSdKC4rVrhU2+6Nis+xunrrS29amMd33Qy7W
-                           XiDLx7G9RmHhzFavB3Pbe14dPER94q+jhDv1CtV1tZ7b7tCPSyvWcThcyCKY
-                           jicMmXLRnoyuZWUt2bKc7Yi/T3YyftD7OaopqepNSGbjwLFsN96RG9uS5iJp
-                           1nQ77Mzj6uWhVH3Ri5yaW4nnbqwyMweAvn0DOr8bvwkg";
-
-            Matrix.License.LicenseManager.SetLicense(lic);
+            string lic = @"eJxkkGlTwjAQhv+K49eOhiJFdNaMHC0WsRz1gm/RhBptUszRNv56UfH+srPv
+                           Pnu8szDm90xqtlOLXOqTXZLt6WJlKqLYcf6BdjFMVUHtvYkpTo2lvAD0XYGZ
+                           JdJw47AP6CuHvtWmEExhSIhgOCxJbokpFKB3Df1CrIl0n4AXcmdrBdAng1AQ
+                           nmNNcqZPfzjbp5umD7Zp/jp0tabEsLBec8UGmww3G367EfgBoH8IYj1gosBG
+                           2c2urYC3+Hs+aLT9FqA/AFKeSWKsYnjl0etMcxtNkomI+dnKtKvGaCTTo8q1
+                           XMUCPZmM4wdvcTFP5y0vUE43edKczubXaG6rzrArX8giK5GzLjFhfbDodUVn
+                           6T2tnXzJOrV3U8lUlUez2D1HRpWj8ePhw1J2c1KKs6upO/Ci+DaqL+N+khLp
+                           D4b+E2VV/9z1htOot8zKit9dUJ/Ww/AE0LdvQNt341cB"; 
             
+            Matrix.License.LicenseManager.SetLicense(lic);
+
             //Brian+ 2015/04/17: Add connect to xmpp server code here
             xmppClient.Username = strSrcName;
             xmppClient.Password = strSrcPass;
@@ -200,11 +192,11 @@ namespace Trilateration_Android
             xmppClient.OnRosterStart += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterStart!!"); };
             xmppClient.OnRosterEnd += (sender, e) => { Log.Debug("Brian", "XMPP OnRosterEnd!!"); };
             xmppClient.OnRosterItem += (sender, e) => { Log.Debug("Brian", "OnRosterItem => jid:" + e.RosterItem.Jid.Bare); };
-            
-            xmppClient.OnMessage += (sender, e) => 
+
+            xmppClient.OnMessage += (sender, e) =>
             {
-                string sBody="";
-                
+                string sBody = "";
+
                 sBody = e.Message.Body;
                 Log.Debug("Brian", "[XMPP]OnMessage => from:" + e.Message.From);
                 Log.Debug("Brian", "[XMPP]Body=" + e.Message.Body);
@@ -214,243 +206,171 @@ namespace Trilateration_Android
                 {
                     Log.Debug("Brian", "[XMPP]Spilt str[" + i + "]=" + sArray[i]);
                 }
-                
-                /*
-                if ((String.Compare(sArray[0], "mode", true) == 0)
-                {
-                    if (String.Compare(sArray[1], "1", true) == 0)
-                        RobotMode = 1;
-                }
-                
-                */
+                               
                 if (String.Compare(sArray[0], "semiauto", true) == 0)
                 {
                     //semiauto mode
+                    NaviMode = 2;
+                    ManModeTimer.Stop();
                     if (String.Compare(sArray[1], "coordinate", true) == 0)
                     {
 
                         PadTarget.X = Convert.ToInt16(sArray[2]);
                         PadTarget.Y = Convert.ToInt16(sArray[3]);
                         //GenCornerCoodinateTest(PadTarget.X, PadTarget.Y);
-                        GenCornerCoodinate(PadTarget.X, PadTarget.Y, 2);
+                        GenCornerCoodinate(PadTarget.X, PadTarget.Y, NaviMode);
                         //AutoTarget = GenCornerCoodinate(PadTarget.X, PadTarget.Y);
-                        
-                        /*
-                        short walkable;
-                        Single diffX;
-                        Single diffY;
-                        Single tmpSingle1, tmpSingle2, tmpSingle3;
-                        Point PadTarget = new Point();
 
-                        //Get target's coordinate
-                        //iPadTargetCount++;
-                        PadTarget.X = Convert.ToInt16(sArray[2]);
-                        PadTarget.Y = Convert.ToInt16(sArray[3]);
-                        
-                        Point a = new Point();
-                        Point b = new Point();
-                        
-                        walkable = myMap.CheckWalk((int)(PadTarget.X * screen2grid_x), (int)(PadTarget.Y * screen2grid_y));
-
-                        tmpSingle1 = target[target_total].X - PadTarget.X * screen2cm_x;
-                        tmpSingle2 = target[target_total].Y - PadTarget.Y * screen2cm_y;
-                        tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
-                        if (tmpSingle3 < 400) return;
-
-                        if (walkable != 0)
+                        //Add send corner coordinate to pad code here
+                        string sCornerX, sCornerY;
+                        if (target_total >= 1)
                         {
-                           //Can not walk, send message to pad
+                            //Send prepare to send coordinate message 
+                            xmppSendMsg("semiauto corner start");
+                                                        //Brian+ 2015/04/29: Only send corner coordinate to pad
+                            for (int i = 1; i < target_total; i++)
+                            {
+                                sCornerX = Convert.ToString((int)(target[i].X / screen2cm_x));
+                                sCornerY = Convert.ToString((int)(target[i].Y / screen2cm_y));
+                                strSendMsg = "semiauto corner " + sCornerX + " " + sCornerY;
+
+                                xmppSendMsg(strSendMsg);
+                                
+                            }
+
+                            //Send end to send coordinate message 
+                            xmppSendMsg("semiauto corner end");
+                            
                         }
-                        else
-                        {
-                            target[0].X = myTag.Avg.X;
-                            target[0].Y = myTag.Avg.Y;
-                            //target_total++?
-                            
-                            if (!myFlag.moving && target_total < 100)
-                            {
-                                a.X = (int)(target[target_total].X / screen2cm_x * screen2grid_x);
-                                a.Y = (int)(target[target_total].Y / screen2cm_y * screen2grid_y);
-                                b.X = (int)(PadTarget.X * screen2grid_x);
-                                b.Y = (int)(PadTarget.Y * screen2grid_y);
-                                myMap.initial_position(a, b);
-                                if (myMap.Autoflag == true) myMap.action();
-                                RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
-                               
-                                foreach (Point p in myMap.path_Result)
-                                {
-                                    target_total++;
-                                    target[target_total].X = p.X / screen2grid_x * screen2cm_x;
-                                    target[target_total].Y = p.Y / screen2grid_y * screen2cm_y;
-                                    diffX = target[target_total].X - target[target_total - 1].X;
-                                    diffY = target[target_total].Y - target[target_total - 1].Y;
-                                    target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
-                                    if (target[target_total].Theta < -180) target[target_total].Theta = target[target_total].Theta + 360;
-                                    else if (target[target_total].Theta > 180) target[target_total].Theta = target[target_total].Theta - 360;
-                                    RunOnUiThread(() => textView.Append(target[target_total].X.ToString() + ", " + target[target_total].Y.ToString() + ", " + target[target_total].Theta.ToString("f2") + "\r\n"));
-                                                               
-                                }
-                            }
 
-                            if (target_total >= 1)
-                            {
-
-                                RunOnUiThread(() => btnDelete.Enabled = true);
-                                RunOnUiThread(() => btnGo.Enabled = true);
-                            }
-                            */
-                            
-                            //Add send corner coordinate to pad code here
-                            string sCornerX, sCornerY;
-                            if (target_total >= 1)
-                            { 
-                                //Send prepare to send coordinate message 
-                                var prepare_msg = new Matrix.Xmpp.Client.Message
-                                {
-                                    Type = Matrix.Xmpp.MessageType.Chat,
-                                    To = strTargetName,
-                                    Body = "semiauto corner start"
-                                };
-                                xmppClient.Send(prepare_msg);
-
-                                //Brian+ 2015/04/29: Only send corner coordinate to pad
-                                for (int i=1; i<target_total; i++)
-                                {
-                                    sCornerX = Convert.ToString((int)(target[i].X / screen2cm_x));
-                                    sCornerY = Convert.ToString((int)(target[i].Y / screen2cm_y));
-                                    strSendMsg = "semiauto corner " + sCornerX + " " + sCornerY;
-                                    
-                                    var cornor_msg = new Matrix.Xmpp.Client.Message
-                                    {
-                                        Type = Matrix.Xmpp.MessageType.Chat,
-                                        To = strTargetName,
-                                        Body = strSendMsg
-                                    };
-                                    Log.Debug("Brian", "[XMPP][semi-auto]target_total=" + target_total + ", Body=" + strSendMsg);
-                                    xmppClient.Send(cornor_msg);
-                                }
-
-                                //Send end to send coordinate message 
-                                var end_msg = new Matrix.Xmpp.Client.Message
-                                {
-                                    Type = Matrix.Xmpp.MessageType.Chat,
-                                    To = strTargetName,
-                                    Body = "semiauto corner end"
-                                };
-                                xmppClient.Send(end_msg);
-                            }    
-                             
-                            //Kill auto mode timer if auto mode has been set
-                            if (AutoModeTimer != null)
-                                AutoModeTimer.Stop();
-                        //} //Brian+ for add GenCornerCoordinate()
-                            //RunOnUiThread(() => view.Invalidate());
+                        //Kill auto mode timer if auto mode has been set
+                        if (AutoModeTimer != null)
+                            AutoModeTimer.Stop();
                     }
                     else if (String.Compare(sArray[1], "start", true) == 0)
                     {
-                        //Add robot go code here
+                        //Log.Debug("Brian", "myFlag.moving=" + myFlag.moving);
                         if (!myFlag.moving)
                         {
-                            previous_step.X = myTag.X;
-                            previous_step.Y = myTag.Y;
 
                             myFlag.moving = true;
-                            //wr.Write(DateTime.Now.ToString("HH:mm:ss ") + "New Route");
-                            //wr.Write("\r\n");
-
-                            Thread dispatchloop = new Thread(new ThreadStart(Dispatch));
-                            dispatchloop.IsBackground = true;
-                            dispatchloop.Priority = System.Threading.ThreadPriority.BelowNormal;
-                            dispatchloop.Start();
-                                                        
+                            wr.Write(DateTime.Now.ToString("HH:mm:ss ") + "New Route");
+                            wr.Write("\r\n");
+                            TowardTargets.NewTask(target, target_total);
                         }
                     }
-
+                    else if (String.Compare(sArray[1], "stop", true) == 0)
+                    {
+                        TowardTargets.Abort();
+                        myFlag.moving = false;
+                        target_total = 0;
+                        target_now = 1;
+                        btnDelete.Enabled = false;
+                        btnGo.Enabled = false;
+                        spinnerTarget.SetSelection(0);
+                        RunOnUiThread(() => view.Invalidate());
+                    }
                 }
                 else if (String.Compare(sArray[0], "direction", true) == 0)
                 {
+
                     //Manual mode
                     if ((pic32_open > 0) && (!myFlag.moving))
                     //if (pic32_open > 0)
                     {
-                        SendManualCommand(pic32_open, sArray[1]);
+                        ManualCommand = sArray[1];
+                        ManualCount = 3;
+                        ManModeTimer.Start();
+
+                        //SendManualCommand(pic32_open, sArray[1]);
                         //Kill auto mode timer if auto mode has been set
                         if (AutoModeTimer != null)
                             AutoModeTimer.Stop();
                     }
                     else
                     {
+                        ManModeTimer.Stop();
                         Log.Debug("Brian", "pic32 open fail!!");
                     }
                 }
                 else if (String.Compare(sArray[0], "auto", true) == 0)
                 {
                     //Auto mode
+                    NaviMode = 3;
+                    ManModeTimer.Stop();
                     if (String.Compare(sArray[1], "scheduledTime", true) == 0)
                     {
-                        sScheduleTime = sArray[2]; //hh:mm
-                        Log.Debug("Brian", "[XMPP]Recevied schedule time=" + sScheduleTime);
+                        dtScheduleTime = Convert.ToDateTime(sArray[2]);
+                        iScheduleTime = dtScheduleTime.Hour * 60 + dtScheduleTime.Minute;
+                        //Log.Debug("Brian", "[XMPP]Recevied schedule time=" + sScheduleTime);
+                        wr.Write("[Auto]Receive auto scheduledTime=" + sArray[2]);
+                        wr.Write("\r\n");
                     }
                     else if (String.Compare(sArray[1], "coordinate", true) == 0)
                     {
-                        //Add auto mode code here
-                        //if (!myFlag.moving)
-                        PadTarget.X = Convert.ToInt16(sArray[2]);
-                        PadTarget.Y = Convert.ToInt16(sArray[3]);
-                        GenCornerCoodinate(PadTarget.X, PadTarget.Y, 3);
 
-                        string sCornerX, sCornerY;
-                        if (target_total >= 1)
+                        if (String.Compare(sArray[2], "start", true) == 0)
                         {
-                            //Send prepare to send coordinate message 
-                            var prepare_msg = new Matrix.Xmpp.Client.Message
-                            {
-                                Type = Matrix.Xmpp.MessageType.Chat,
-                                To = strTargetName,
-                                Body = "auto corner start"
-                            };
-                            xmppClient.Send(prepare_msg);
+                            //clear AutoModeTargetAmount and AutoTargetNow
+                            AutoTargetAmount = 0;
+                            AutoTargetNow = 0;
+                            wr.Write("[Auto]Receive auto Start!");
+                            wr.Write("\r\n");
 
-                            //Brian+ 2015/04/29: Only send corner coordinate to pad
-                            for (int i = 1; i < target_total; i++)
+                            //Log.Debug("Brian", "[Auto]Receive auto Start!!");
+                    
+                        }
+                        else if (String.Compare(sArray[2], "end", true) == 0)
+                        {
+                            //Auto mode setup completely
+                            if (TargetNotWalkable == 1)
                             {
-                                sCornerX = Convert.ToString((int)(target[i].X / screen2cm_x));
-                                sCornerY = Convert.ToString((int)(target[i].Y / screen2cm_y));
-                                strSendMsg = "auto corner " + sCornerX + " " + sCornerY;
-
-                                var cornor_msg = new Matrix.Xmpp.Client.Message
-                                {
-                                    Type = Matrix.Xmpp.MessageType.Chat,
-                                    To = strTargetName,
-                                    Body = strSendMsg
-                                };
-                                Log.Debug("Brian", "[XMPP][auto]target_total=" + target_total + ", Body=" + strSendMsg);
-                                xmppClient.Send(cornor_msg);
+                                //Brian+ 2015/05/13: clear path and timer if any target is not walkable
+                                Array.Clear(AutoTarget, 0, 10);
+                                
+                                if (AutoModeTimer != null)
+                                    AutoModeTimer.Close();
+                                
+                                TargetNotWalkable = 0;
+                                //wr.WriteLine("[Auto]One target is not walkable, clear path and timer!!!");
+                                wr.Write("[Auto]One target is not walkable, clear path and timer!!!");
+                                wr.Write("\r\n");
+                                //Log.Debug("Brian", "[Auto]One target is not walkable, clear path and timer!!!");
+                            
                             }
-
-                            //Send end to send coordinate message 
-                            var end_msg = new Matrix.Xmpp.Client.Message
+                            else
                             {
-                                Type = Matrix.Xmpp.MessageType.Chat,
-                                To = strTargetName,
-                                Body = "auto corner end"
-                            };
-                            xmppClient.Send(end_msg);
-                        }    
-                        
-                        AutoModeTimer = new System.Timers.Timer();
-                        AutoModeTimer.Interval = 1000 * 60;
-                        AutoModeTimer.Elapsed += new System.Timers.ElapsedEventHandler(AutoModeTimerHandler);
-                        AutoModeTimer.Start();
-                                              
-                        //Auto mode setup completely
-                        var autoend_msg = new Matrix.Xmpp.Client.Message
+                                AutoModeTimer = new System.Timers.Timer();
+                                AutoModeTimer.Interval = 1000 * 60;
+                                AutoModeTimer.Elapsed += new System.Timers.ElapsedEventHandler(AutoModeTimerHandler);
+                                AutoModeTimer.Start();
+
+                                xmppSendMsg("auto setUpDone");
+                                //Log.Debug("Brian", "[Auto]auto setup done");
+                                
+                                wr.Write("[Auto]auto setup done!!");
+                                wr.Write("\r\n");
+                                wr.Flush();
+                                
+                            }
+                            
+                        }
+                        else
                         {
-                                    Type = Matrix.Xmpp.MessageType.Chat,
-                                    To = strTargetName,
-                                    Body = "auto setUpDone"
-                        };
-                        xmppClient.Send(autoend_msg);
+                            AutoTarget[AutoTargetAmount].X = Convert.ToInt16(sArray[2]);
+                            AutoTarget[AutoTargetAmount].Y = Convert.ToInt16(sArray[3]);
+                            AutoTarget[AutoTargetAmount].StopTime = Convert.ToInt16(sArray[4]);
+
+                            AutoCheckWalkable(AutoTarget[AutoTargetAmount].X, AutoTarget[AutoTargetAmount].Y, NaviMode);
+                            AutoTargetAmount++;
+                            //Log.Debug("Brian", "[Auto]auto setup done");
+                            //Log.Debug("Brian", "[Auto]Receive Target" + AutoTargetAmount + " X="
+                            //            + AutoTarget[AutoTargetAmount - 1].X + " ,Y=" + AutoTarget[AutoTargetAmount - 1].Y);
+                              
+                            wr.WriteLine("[Auto]Receive Target" + AutoTargetAmount + " X="
+                                        + AutoTarget[AutoTargetAmount - 1].X + " ,Y=" + AutoTarget[AutoTargetAmount - 1].Y);
+                                                   
+                        }    
                     }
                 }
             };
@@ -461,17 +381,17 @@ namespace Trilateration_Android
                 Log.Debug("Brian", "OnPresence => from:" + e.Presence.From + " | " + e.Presence.Show + " | " + e.Presence.Status);
                 bXmppConnection = true;
             };
-            
-            xmppClient.OnError += (sender, e) => 
+
+            xmppClient.OnError += (sender, e) =>
             {
-                Log.Debug("Brian", "XMPP ERROR:" + e.Exception.Message); 
+                Log.Debug("Brian", "XMPP ERROR:" + e.Exception.Message);
             };
-            
+
             xmppClient.OnReceiveXml += (sender, e) =>
             {
                 Log.Debug("Brian", "RECV=" + e.Text);
             };
-            
+
             xmppClient.OnSendXml += (sender, e) =>
             {
                 Log.Debug("Brian", "SEND=" + e.Text);
@@ -489,9 +409,47 @@ namespace Trilateration_Android
                 //textView.Append(" XMPP Login Success!!\r\n");
                 Log.Debug("Brian", "XMPP Login Success!!");
             };
-            
+
             xmppClient.Open();
-            
+
+
+            labelVehicle.Visibility = ViewStates.Visible;
+            pic32_open = Uart2C.OpenUart("ttymxc3");
+            if (pic32_open > 0)
+            {
+                Uart2C.SetUart(2); //0: B9600, 1:B115200, 2:B19200                    
+                textView.Append("Open ttymxc3 successfully, Baund Rate=19200, fd_num=" + pic32_open + "\r\n");
+
+                Pic32DataRecvTimer = new System.Timers.Timer();
+                Pic32DataRecvTimer.Interval = 100;
+                Pic32DataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(driving_DataReceived);
+                Pic32DataRecvTimer.Start();
+                Log.Debug("Brian", "PIC32 opened");
+                TowardTargets.Start();
+                TowardTargets.ControlEvent += ControlOut;
+
+            }
+            else
+            {
+                textView.Append("Open ttymx3 fail!!\r\n");
+            }
+
+			Thread ThreadAnchor = new Thread(new ThreadStart(renew_anchor_rate));
+            ThreadAnchor.IsBackground = true;
+            //ThreadAnchor.Priority = System.Threading.ThreadPriority.BelowNormal;
+            ThreadAnchor.Start();
+
+            timer1 = new System.Timers.Timer();
+            timer1.Interval = 100;
+            timer1.Elapsed += new System.Timers.ElapsedEventHandler(timer1_Tick);
+            timer1.Stop();
+
+            ManModeTimer = new System.Timers.Timer();
+            ManModeTimer.Interval = 100;
+            ManModeTimer.Elapsed += new System.Timers.ElapsedEventHandler(ManModeTimerHandler);
+            ManModeTimer.Stop();
+
+            btnLoad.SetX(300);
             //Brian+ for test: create new default.set and raw.bmp anyway
             //if (!System.IO.Directory.Exists(path))
             {
@@ -528,8 +486,9 @@ namespace Trilateration_Android
             }
 
             // create log file
-            string logName = path + @"/" + string.Format("log{0:HH}", DateTime.Now) + ".txt";       // Set the file name
+            string logName = path + @"/" + string.Format("log{0:s}", DateTime.Now) + ".txt";       // Set the file name
             wr = new System.IO.StreamWriter(logName, true);
+            Log.Debug("Patrick", "Log File Name:" + logName);
             wr.Write("==== " + DateTime.Now.ToString("yyyyMMdd,HH:mm:ss ") + " ====\r\n");
 
             //Brian+: create go log file
@@ -537,6 +496,7 @@ namespace Trilateration_Android
             //fwr = new System.IO.StreamWriter(logGo, true);
             //fwr.WriteLine("==== FUCK TEST ====");
             //fwr.Write("==== " + DateTime.Now.ToString("yyyyMMdd,HH:mm:ss ") + " ====\r\n");
+
             //fwr.Close();
 
             view = new DrawView(this);
@@ -545,10 +505,12 @@ namespace Trilateration_Android
             linearContent.AddView(view);
 
             bool UseWaitCursor = false;
-            buttonCalCompass.Enabled = false;
+            buttonCalCompass.Enabled = true;
 
             buttonCalCompass.Click += (sender, e) =>
             {
+                //bool tmpBool = TowardOneTarget.PureMove;
+                //TowardOneTarget.PureMove = !tmpBool;
                 byte[] outbyte = new byte[10];
                 //int outbytelen = 0;
 
@@ -581,6 +543,39 @@ namespace Trilateration_Android
                 }
             };
 
+            spinnerTarget.ItemSelected += (sender, e) =>
+            {   
+                Log.Debug("Patrick", "Item Index=" + e.Position);
+                if (e.Position == 0)
+                    return;
+                int ArrayIdx = e.Position - 1;
+                Single diffX;
+                Single diffY;
+
+                target[0].X = myTag.Avg.X;
+                target[0].Y = myTag.Avg.Y;
+
+                if (!myFlag.moving && target_total < 100)
+                {
+                    target_total++;
+                    target[target_total].X = favorite[ArrayIdx].X;
+                    target[target_total].Y = favorite[ArrayIdx].Y;
+                    diffX = target[target_total].X - target[target_total - 1].X;
+                    diffY = target[target_total].Y - target[target_total - 1].Y;
+                    target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
+                    if (target[target_total].Theta < 0) target[target_total].Theta = target[target_total].Theta + 360;
+                    else if (target[target_total].Theta > 360) target[target_total].Theta = target[target_total].Theta - 360;
+
+                    if (target_total >= 1)
+                    {
+                        btnDelete.Enabled = true;
+                        btnGo.Enabled = true;
+                    }
+                }
+                view.Invalidate();
+
+            };
+
             buttonTest2.Click += (sender, e) =>
             {
                 myCommand.speed = 95;
@@ -588,7 +583,7 @@ namespace Trilateration_Android
                 while (true)
                 {
                     Thread.Sleep(100);
-                    OutCommand(myCommand);
+                    //OutCommand(myCommand);
                 }
             };
             view.Visibility = ViewStates.Gone;
@@ -602,7 +597,7 @@ namespace Trilateration_Android
                 // Set pens
                 Paint pen_anchor = new Paint() { Color = Color.DarkSeaGreen, StrokeWidth = 3, };
                 pen_anchor.SetStyle(Paint.Style.Stroke); //Brian+ for set paint style=stroke
-                Paint pen_tag_s = new Paint() { Color = Color.LawnGreen, StrokeWidth = 6 }; 
+                Paint pen_tag_s = new Paint() { Color = Color.LawnGreen, StrokeWidth = 8 }; 
                 Paint pen_tag_m = new Paint() { Color = Color.Firebrick, StrokeWidth = 6 }; 
                 Paint pen_indication = new Paint() { Color = Color.Brown, StrokeWidth = 8 }; 
                 Paint pen_old = new Paint() { Color = Color.Gray, StrokeWidth = 5 }; 
@@ -622,23 +617,26 @@ namespace Trilateration_Android
                 if (anchor1.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor1.X / screen2cm_x), (int)(anchor1.Y / screen2cm_y), 5, pen_anchor);
-                    //e.DrawCircle((int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), pen_anchor);
-                    //C# original function
-                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor1.X - anchor1.Range) * x_scale), (int)((anchor1.Y - anchor1.Range) * y_scale), (int)(anchor1.Range * 2 * x_scale), (int)(anchor1.Range * 2 * y_scale));
                 }
                 if (anchor2.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor2.X / screen2cm_x), (int)(anchor2.Y / screen2cm_y), 5, pen_anchor);
-                    //e.DrawCircle( (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), pen_anchor);
-                    //C# original function
-                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor2.X - anchor2.Range) * x_scale), (int)((anchor2.Y - anchor2.Range) * y_scale), (int)(anchor2.Range * 2 * x_scale), (int)(anchor2.Range * 2 * y_scale));
                 }
                 if (anchor3.Rate > 0)
                 {
                     e.DrawCircle((int)(anchor3.X / screen2cm_x), (int)(anchor3.Y / screen2cm_y), 5, pen_anchor);
-                    //e.DrawCircle((int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), pen_anchor);
-                    //C# original function
-                    //e.Graphics.DrawEllipse(pen_anchor, (int)((anchor3.X - anchor3.Range) * x_scale), (int)((anchor3.Y - anchor3.Range) * y_scale), (int)(anchor3.Range * 2 * x_scale), (int)(anchor3.Range * 2 * y_scale));
+                }
+                if (anchor4.Rate > 0)
+                {
+                    e.DrawCircle((int)(anchor4.X / screen2cm_x), (int)(anchor4.Y / screen2cm_y), 5, pen_anchor);
+                }
+                if (anchor5.Rate > 0)
+                {
+                    e.DrawCircle((int)(anchor5.X / screen2cm_x), (int)(anchor5.Y / screen2cm_y), 5, pen_anchor);
+                }
+                if (anchor6.Rate > 0)
+                {
+                    e.DrawCircle((int)(anchor6.X / screen2cm_x), (int)(anchor6.Y / screen2cm_y), 5, pen_anchor);
                 }
                 if (myTag.Rate > 0)
                 {
@@ -653,13 +651,9 @@ namespace Trilateration_Android
                 tmpSingle2 = (Single)(30 * Math.Sin(myVehicle.compass * 3.14 / 180f)) + myTag.Avg.Y / screen2cm_y;
                 //e.Graphics.DrawLine(pen_indication, (int)tmpSingle1, (int)tmpSingle2, (int)(myTag.X / screen2cm_x), (int)(myTag.Y / screen2cm_y));
                 e.DrawLine((int)tmpSingle1, (int)tmpSingle2, (int)(myTag.X / screen2cm_x), (int)(myTag.Y / screen2cm_y), pen_indication);
-                /*
-                // robot is moving
-                if (myFlag.moving)
-                {
-                    e.DrawLine((int)(previous_step.X * x_scale), (int)(previous_step.Y * y_scale), (int)(myTag.X * x_scale), (int)(myTag.Y * y_scale), pen_indication);
-                }
-                */
+
+                if ((TowardTargets.Status & TowardTargets.e_status.Moving) > 0) target_now = TowardTargets.TargetNow;
+
                 if (target_total >= 1 && target_now >= 1)
                 {
                     for (i = target_now; i <= target_total; i++)
@@ -671,19 +665,18 @@ namespace Trilateration_Android
                         e.DrawLine((int)(target[i - 1].X / screen2cm_x), (int)(target[i - 1].Y / screen2cm_y), (int)(target[i].X / screen2cm_x), (int)(target[i].Y / screen2cm_y), pen_target);
                     }
                 }
-
-
             };
 
             btnDelete.Click += (sender, e) =>
             {
+                TowardTargets.Abort();
                 myFlag.moving = false;
                 target_total = 0;
                 target_now = 1;
                 btnDelete.Enabled = false;
                 btnGo.Enabled = false;
+                spinnerTarget.SetSelection(0);
                 RunOnUiThread(() => view.Invalidate());
-                //view.Invalidate();
             };
             
             btnGo.Click += (sender, e) =>
@@ -691,20 +684,17 @@ namespace Trilateration_Android
                 //Log.Debug("Brian", "myFlag.moving=" + myFlag.moving);
                 if (!myFlag.moving)
                 {
-                    previous_step.X = myTag.X;
-                    previous_step.Y = myTag.Y;
 
                     myFlag.moving = true;
                     wr.Write(DateTime.Now.ToString("HH:mm:ss ")+"New Route");
                     wr.Write("\r\n");
 
-                    Thread dispatchloop = new Thread(new ThreadStart(Dispatch));
-                    dispatchloop.IsBackground = true;
-                    dispatchloop.Priority = System.Threading.ThreadPriority.BelowNormal;
-                    dispatchloop.Start();
-                    
-                    //System.Threading.WaitCallback waitCallback = new WaitCallback(cal_move);
-                    //ThreadPool.QueueUserWorkItem(waitCallback, "First route");
+                    TowardTargets.NewTask(target, target_total);
+                    //Thread dispatchloop = new Thread(new ThreadStart(Dispatch));
+                    //dispatchloop.IsBackground = true;
+                    //dispatchloop.Priority = System.Threading.ThreadPriority.BelowNormal;
+                    //dispatchloop.Start();
+
                 }
             };
             
@@ -724,7 +714,9 @@ namespace Trilateration_Android
                      Point a = new Point();
                      Point b = new Point();
                      //List<Point> corner = new List<Point>();
-                     
+                     target[0].X = myTag.Avg.X;
+                     target[0].Y = myTag.Avg.Y;
+
                      walkable = myMap.CheckWalk((int)(e.GetX() * screen2grid_x), (int)(e.GetY() * screen2grid_y));
                      
                      tmpSingle1 = target[target_total].X - e.GetX() *screen2cm_x;
@@ -738,9 +730,6 @@ namespace Trilateration_Android
                      }
                      else
                      {
-                        target[0].X = myTag.Avg.X;
-                         target[0].Y = myTag.Avg.Y;
-
                         if (!myFlag.moving && target_total < 100)
                         {
                             a.X = (int)(target[target_total].X / screen2cm_x * screen2grid_x);
@@ -748,9 +737,18 @@ namespace Trilateration_Android
                             b.X = (int)(e.GetX() * screen2grid_x);
                             b.Y = (int)(e.GetY() * screen2grid_y);
                             myMap.initial_position(a, b);
-                            if (myMap.Autoflag == true) myMap.action();
+
+                            if (myMap.Autoflag == true)
+                            {
+                                if (myMap.action() == false) { Log.Debug("Brian", "actionFalse"); } else { Log.Debug("Brian", "actionTrue"); }
+                            }
+                            //if (myMap.action() == false) return;
+                                
                             RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
-                            //textBox1.Text = "Add " + myMap.path_Result.Count.ToString()+ " targets\r\n";
+                            //myMap.path_Result.Clear();
+                            //myMap.path_Result.Add(b);
+                            if (myMap.path_Result.Count <= 0) return;
+
                             foreach (Point p in myMap.path_Result)
                             {
                                 target_total++;
@@ -769,7 +767,7 @@ namespace Trilateration_Android
 
                         if (target_total >= 1)
                         {
-
+                            target_now = 1;
                             btnDelete.Enabled = true;
                             btnGo.Enabled = true;
                         }
@@ -779,6 +777,7 @@ namespace Trilateration_Android
                      //view.Invalidate();
                  }
              };
+
 
             btnConnect.Click+=(sender,e)=>
             {
@@ -795,6 +794,8 @@ namespace Trilateration_Android
                     StreamReader sr = new StreamReader(fileName);
                     string line;
                     string[] linesplit;
+                    var adapter = new ArrayAdapter<string>(this, Android.Resource.Layout.SimpleSpinnerDropDownItem);
+                    adapter.Add("Favorite");
                     while (!sr.EndOfStream)
                     {
                         line = sr.ReadLine();
@@ -829,18 +830,27 @@ namespace Trilateration_Android
                         else if (linesplit[0] == "A3X") anchor3.X = Convert.ToSingle(linesplit[1]);
                         else if (linesplit[0] == "A3Y") anchor3.Y = Convert.ToSingle(linesplit[1]);
                         else if (linesplit[0] == "A3Z") anchor3.Z = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A4X") anchor4.X = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A4Y") anchor4.Y = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A4Z") anchor4.Z = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A5X") anchor5.X = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A5Y") anchor5.Y = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A5Z") anchor5.Z = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A6X") anchor6.X = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A6Y") anchor6.Y = Convert.ToSingle(linesplit[1]);
+                        else if (linesplit[0] == "A6Z") anchor6.Z = Convert.ToSingle(linesplit[1]);
                         else if (linesplit[0] == "mapwidth") mapsize.X = Convert.ToInt16(linesplit[1]);
                         else if (linesplit[0] == "mapheight") mapsize.Y = Convert.ToInt16(linesplit[1]);
-                        else if (linesplit[0] == "range_ratio") range_ratio = Convert.ToInt16(linesplit[1]);
                         else if (linesplit[0] == "favorite")
                         {
                             favorite[count1].Note = linesplit[1];
                             favorite[count1].X = Convert.ToInt16(linesplit[2]);
                             favorite[count1].Y = Convert.ToInt16(linesplit[3]);
-                            //comboTarget.Items.Add(favorite[count1].Note); //spinner
+                            adapter.Add(favorite[count1].Note);
                             count1++;
                         }
                     }
+                    spinnerTarget.Adapter = adapter;
                     sr.Close();
                 }
                 else 
@@ -849,18 +859,18 @@ namespace Trilateration_Android
                 if (ComPortDataReady >= 4)
                 {
                     //Brian+: Add UART control code here
-                    pic32_open = Uart2C.OpenUart("ttymxc3");
-                    if (pic32_open > 0)
-                    {
-                        Uart2C.SetUart(2); //0: B9600, 1:B115200, 2:B19200                    
-                        textView.Append("Open ttymxc3 successfully, Baund Rate=19200, fd_num=" + pic32_open + "\r\n");
+                    //pic32_open = Uart2C.OpenUart("ttymxc3");
+                    //if (pic32_open > 0)
+                    //{
+                    //    Uart2C.SetUart(2); //0: B9600, 1:B115200, 2:B19200                    
+                    //    textView.Append("Open ttymxc3 successfully, Baund Rate=19200, fd_num=" + pic32_open + "\r\n");
                       
-                    } 
-                    else
-                    {
-                        textView.Append("Open ttymx3 fail!!\r\n");
+                    //} 
+                    //else
+                    //{
+                    //    textView.Append("Open ttymx3 fail!!\r\n");
                     
-                    }
+                    //}
                 
                     tag_open = Uart2C.OpenUart("ttymxc2");
                     if (tag_open > 0)
@@ -879,34 +889,34 @@ namespace Trilateration_Android
                 //Brian+ for test: call SetAppearance() to set screen2map_x and screen2map_y 
                 SetAppearance();
                 
-                if ((pic32_open > 0) && (tag_open > 0))    
+                //if (tagPort.IsOpen && drivingPort.IsOpen)
+                //if ((pic32_open > 0) && (tag_open > 0))   
+                if(tag_open > 0 )
                 {
-                    timer1 = new System.Timers.Timer();
-                    timer1.Interval = 200;
-                    timer1.Elapsed += new System.Timers.ElapsedEventHandler(timer1_Tick);
-                    timer1.Start();
                     
+                    //timer1.Enabled = true;
+
                     //Brian+ Add timers to hook driving_DataReceived() and tag_DataReceived()
-                    Pic32DataRecvTimer = new System.Timers.Timer();
-                    Pic32DataRecvTimer.Interval = 200;
-                    Pic32DataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(driving_DataReceived);
-                    Pic32DataRecvTimer.Start();
+                    //drivingBuff.Received = new byte[100];
+                    //drivingBuff.Start = -1;
+                    //drivingBuff.End = -1;
+                    //Pic32DataRecvTimer = new System.Timers.Timer();
+                    //Pic32DataRecvTimer.Interval = 50;
+                    //Pic32DataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(driving_DataReceived);
+                    //Pic32DataRecvTimer.Start();
 
                     TagDataRecvTimer = new System.Timers.Timer();
-                    TagDataRecvTimer.Interval = 200;
+                    TagDataRecvTimer.Interval = 100;
                     TagDataRecvTimer.Elapsed += new System.Timers.ElapsedEventHandler(tag_DataReceived);
                     TagDataRecvTimer.Start();
-                    
-                    hpcounter1.Start();
-                    hpcounter2.Start();
-                    hpcounter3.Start();
+
                     hpcounter4.Start();
                     btnConnect.Enabled = false;
                     myFlag.screen_ready = true;
                     buttonCalCompass.Enabled = true;
 
-                    TowardOneTarget.Start();
-                    TowardOneTarget.ControlEvent += ControlOut;
+                    //TowardOneTarget.Start();
+                    //TowardOneTarget.ControlEvent += ControlOut;
 
                     //Brian+: 2015/04/22 [xmpp]Add send coordinate timer
                     SendCoordinateTimer = new System.Timers.Timer();
@@ -914,8 +924,10 @@ namespace Trilateration_Android
                     SendCoordinateTimer.Elapsed += new System.Timers.ElapsedEventHandler(SendCoordinateHandler);
                     SendCoordinateTimer.Start();
                 }
+                Thread.Sleep(500);
+                timer1.Start();
             };
-            
+
             buttonTest.Click += (sender, e) =>
             {
                 int ii;
@@ -936,8 +948,7 @@ namespace Trilateration_Android
                     {
                         ii++;
                         Thread.Sleep(500);
-                        previous_step.X = myTag.X;
-                        previous_step.Y = myTag.Y;
+
                         target[0].X = myTag.Avg.X;
                         target[0].Y = myTag.Avg.Y;
                         target[1].X = favorite[0].X;
@@ -945,10 +956,10 @@ namespace Trilateration_Android
                         target[2].X = favorite[1].X;
                         target[2].Y = favorite[1].X;
                         target_total = 2;
-
+                        
                         myFlag.moving = true;
-                        System.Threading.WaitCallback waitCallback = new WaitCallback(cal_move);
-                        ThreadPool.QueueUserWorkItem(waitCallback, "First route");
+                        //System.Threading.WaitCallback waitCallback = new WaitCallback(cal_move);
+                        //ThreadPool.QueueUserWorkItem(waitCallback, "First route");
                     }
                     else Thread.Sleep(100);
 
@@ -977,6 +988,7 @@ namespace Trilateration_Android
                     myMap.Grid_W = cfg.GridWidth;
                     myMap.Grid_H = cfg.GridHeight;
                     myMap.East = cfg.MapEast;
+                    myVehicle.East = cfg.MapEast;
 
                     textView.Append("Loading image file " + file2 + ".bmp \r\n");
                     success = myMap.LoadFile(file2);
@@ -1003,7 +1015,7 @@ namespace Trilateration_Android
                             //groupBox2.Visible = true;
                             //buttonHide.Visible = true;
                             labelTable.Visibility = ViewStates.Visible;
-                            //labelVehicle.Visibility = ViewStates.Gone;
+                            
                             btnLoad.Visibility = ViewStates.Gone;
                             btnConnect.Enabled = true;
                             
@@ -1020,122 +1032,156 @@ namespace Trilateration_Android
         //Brian+ 2015/04/20: Add xmpp AutoModeTimer handler
         private void AutoModeTimerHandler(object sender, EventArgs e)
         {
-            string sCurrentTime = DateTime.Now.ToString("HH:mm");
-            Log.Debug("Brian", "[XMPP]ScheduleTime=" + sScheduleTime + ", CurrentTime=" + sCurrentTime);
-            if (String.Compare(sCurrentTime, sScheduleTime, true) == 0)
+            int iCurrentTime = DateTime.Now.Hour * 60 + DateTime.Now.Minute;
+            //Log.Debug("Brian", "[XMPP]ScheduleTime=" + sScheduleTime + ", CurrentTime=" + sCurrentTime);
+            if (iCurrentTime == iScheduleTime)
             {
+                AutoGenCornerCoodinate(AutoTarget[AutoTargetNow].X, AutoTarget[AutoTargetNow].Y, NaviMode);
                 if (!myFlag.moving)
                 {
-                    previous_step.X = myTag.X;
-                    previous_step.Y = myTag.Y;
-
                     myFlag.moving = true;
-                    //wr.Write(DateTime.Now.ToString("HH:mm:ss ") + "New Route");
-                    //wr.Write("\r\n");
-
-                    Thread dispatchloop = new Thread(new ThreadStart(Dispatch));
-                    dispatchloop.IsBackground = true;
-                    dispatchloop.Priority = System.Threading.ThreadPriority.BelowNormal;
-                    dispatchloop.Start();
-
-                    //System.Threading.WaitCallback waitCallback = new WaitCallback(cal_move);
-                    //ThreadPool.QueueUserWorkItem(waitCallback, "First route");
+                    
+                    if (AutoTargetNow == 0)
+                        xmppSendMsg("auto start");
+                    
+                    TowardTargets.NewTask(target, target_total);
+                    wr.Write("[Auto]Navigation start at" + DateTime.Now.ToString() +
+                             " to (" + AutoTarget[AutoTargetNow].X + ", " + AutoTarget[AutoTargetNow].Y + ")");
+                    wr.Write("\r\n");
+                        //Log.Debug("Brian", "[Auto]Navigation start at" + sCurrentTime);
                 }
             }
         }
         
+        private void ManModeTimerHandler(object sender, EventArgs e)
+        {
+            byte[] outbyte = new byte[6];
+
+            if (ManualCount > 0)
+            {
+                ManualCount--;
+                outbyte[0] = 0x53;
+                outbyte[1] = 0x11;
+                outbyte[3] = 0x00;
+                outbyte[4] = 0x00;
+                outbyte[5] = 0x45;
+                if (String.Compare(ManualCommand, "forward", true) == 0)
+                    outbyte[2] = 0x01;
+                else if (String.Compare(ManualCommand, "backward", true) == 0)
+                    outbyte[2] = 0x02;
+                else if (String.Compare(ManualCommand, "left", true) == 0)
+                    outbyte[2] = 0x03;
+                else if (String.Compare(ManualCommand, "right", true) == 0)
+                    outbyte[2] = 0x04;
+                else if (String.Compare(ManualCommand, "forRig", true) == 0)
+                    outbyte[2] = 0x07;
+                else if (String.Compare(ManualCommand, "bacRig", true) == 0)
+                    outbyte[2] = 0x08;
+                else if (String.Compare(ManualCommand, "forLeft", true) == 0)
+                    outbyte[2] = 0x05;
+                else if (String.Compare(ManualCommand, "bacLeft", true) == 0)
+                    outbyte[2] = 0x06;
+
+                Log.Debug("Brian", "outbyte[]=" + ToHexString(outbyte));
+                Uart2C.SendMsgUart(pic32_open, outbyte);
+            }
+        }
+
         //Brian+ 2015/04/20: Add xmpp SendCoordinateTimer handler
         private void SendCoordinateHandler(object sender, EventArgs e)
         {
-            int tag_x = 0, tag_y = 0;
+            int tag_x = 0, tag_y = 0, compass = 0;
 
-            if (bXmppConnection && bBeaconFind)
+            //if (bXmppConnection && bBeaconFind)
+            if (bXmppConnection)
             {
                 tag_x = Convert.ToInt32(myTag.Avg.X / screen2cm_x);
                 tag_y = Convert.ToInt32(myTag.Avg.Y / screen2cm_y);
+                compass = Convert.ToInt32(myVehicle.compass);
 
-                strSendMsg = "source " + tag_x.ToString() + " " + tag_y.ToString();
-                var xmpp_msg = new Matrix.Xmpp.Client.Message
-                {
-                    Type = Matrix.Xmpp.MessageType.Chat,
-                    To = strTargetName,
-                    Body = strSendMsg
-                };
-                xmppClient.Send(xmpp_msg);
+                strSendMsg = "source " + tag_x.ToString() + " " + tag_y.ToString() + " " + compass.ToString();
+                xmppSendMsg(strSendMsg);
+               
             }
         }
 
-        private void comboTarget_SelectedIndexChanged(object sender, EventArgs e)
+        //Brian+ 2015/05/07: Add xmppSendMsg() to send xmpp message
+        public void xmppSendMsg(string message)
         {
-            Single diffX;
-            Single diffY;
-
-            target[0].X = myTag.Avg.X;
-            target[0].Y = myTag.Avg.Y;
-
-            if (!myFlag.moving && target_total < 100)
+            var msg = new Matrix.Xmpp.Client.Message
             {
-                target_total++;
-                // target[target_total].X = favorite[comboTarget.SelectedIndex].X;
-                // target[target_total].Y = favorite[comboTarget.SelectedIndex].Y;
-                diffX = target[target_total].X - target[target_total - 1].X;
-                diffY = target[target_total].Y - target[target_total - 1].Y;
-                target[target_total].Theta = (Single)(Math.Atan2(diffY, diffX) * 180f / 3.14f);
-                if (target[target_total].Theta < 0) target[target_total].Theta = target[target_total].Theta + 360;
-                else if (target[target_total].Theta > 360) target[target_total].Theta = target[target_total].Theta - 360;
-
-                if (target_total >= 1)
-                {
-                    btnDelete.Enabled = true;
-                    btnGo.Enabled = true;
-                }
-            }
-            //view.Invalidate();
-            RunOnUiThread(() => view.Invalidate());
+                Type = Matrix.Xmpp.MessageType.Chat,
+                To = strTargetName,
+                Body = message
+            };
+            
+            if (xmppClient != null)
+                xmppClient.Send(msg);
         }
 
-        public void GenCornerCoodinateTest(int TargetX, int TargetY)
+        public void AutoCheckWalkable(int TargetX, int TargetY, int Mode)
+        {
+            int walkable;
+
+            walkable = myMap.CheckWalk((int)(TargetX * screen2grid_x), (int)(TargetY * screen2grid_y));
+
+            if (walkable != 0)
+            {
+                //Can not walk, send message to pad
+                if (Mode == 2)
+                    strSendMsg = "semiauto walkable 0";
+                else if (Mode == 3)
+                    strSendMsg = "auto walkable 0";
+                
+                xmppSendMsg(strSendMsg);
+                TargetNotWalkable = 1;
+            }
+            else
+            {
+                if (Mode == 2)
+                    strSendMsg = "semiauto walkable 1";
+                else if (Mode == 3)
+                    strSendMsg = "auto walkable 1";
+
+                xmppSendMsg(strSendMsg);
+                
+            }
+            
+        }
+        
+        public void AutoGenCornerCoodinate(int TargetX, int TargetY, int Mode)
         {
             short walkable;
             Single diffX;
             Single diffY;
             Single tmpSingle1, tmpSingle2, tmpSingle3;
-            //Point PadTarget = new Point();
 
             Point a = new Point();
             Point b = new Point();
 
+            //Log.Debug("Brian", "[Auto]GenCornerCoodinate(" + TargetX +", " + TargetY + ")");
+
             //Brian+ mark for test
-            //walkable = myMap.CheckWalk((int)(TargetX * screen2grid_x), (int)(TargetY * screen2grid_y));
-            walkable = 0;
+            walkable = myMap.CheckWalk((int)(TargetX * screen2grid_x), (int)(TargetY * screen2grid_y));
 
             //Ignore distance < 20cm(400/20) between 2 points
             tmpSingle1 = target[target_total].X - TargetX * screen2cm_x;
             tmpSingle2 = target[target_total].Y - TargetY * screen2cm_y;
             tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
-            //if (tmpSingle3 < 400) return; //Brian+: temporally marked for testing 
+            //if (tmpSingle3 < 400) return;  
+
+            target_total = 0;
+            target_now = 1;
 
             if (walkable != 0)
             {
-                //Can not walk, send message to pad
-                var walkable_msg = new Matrix.Xmpp.Client.Message
-                {
-                    Type = Matrix.Xmpp.MessageType.Chat,
-                    To = strTargetName,
-                    Body = "walkable 0"
-                };
-                xmppClient.Send(walkable_msg);
-
-                //return null;
+             
             }
             else
             {
                 target[0].X = myTag.Avg.X;
                 target[0].Y = myTag.Avg.Y;
-                //target_total++?
 
-                //Brian+ mark for test
-                /*
                 if (!myFlag.moving && target_total < 100)
                 {
                     a.X = (int)(target[target_total].X / screen2cm_x * screen2grid_x);
@@ -1145,6 +1191,7 @@ namespace Trilateration_Android
                     myMap.initial_position(a, b);
                     if (myMap.Autoflag == true) myMap.action();
                     RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
+                    if (myMap.path_Result.Count <= 0) return; //Evan's suck
 
                     foreach (Point p in myMap.path_Result)
                     {
@@ -1160,12 +1207,10 @@ namespace Trilateration_Android
 
                     }
                 }
-                */
-                target_total = 1;
-                target_now = 1;
-                Log.Debug("Brian", "[XMPP]PadTarget.X=" + PadTarget.X + " ,PadTarget.Y=" + PadTarget.Y);
-                target[target_total].X = PadTarget.X * screen2cm_x;
-                target[target_total].Y = PadTarget.Y * screen2cm_y;
+
+                //Log.Debug("Brian", "[Auto]target_total ==" + target_total);
+                wr.Write("[Auto]Gen coordinate, target_total=" + target_total);
+                wr.Write("\r\n");
 
                 if (target_total >= 1)
                 {
@@ -1174,7 +1219,6 @@ namespace Trilateration_Android
                     RunOnUiThread(() => btnGo.Enabled = true);
                     RunOnUiThread(() => view.Invalidate());
 
-
                 }
                 
             }
@@ -1182,7 +1226,6 @@ namespace Trilateration_Android
         
         //Brian+ 2015/04/27: Add GenCornerCoodinate() to generate corner's coordinate
         public void GenCornerCoodinate(int TargetX, int TargetY, int Mode)
-        //public struct_PointF[] GenCornerCoodinate(int TargetX, int TargetY)
         {
             short walkable;
             Single diffX;
@@ -1201,9 +1244,12 @@ namespace Trilateration_Android
             tmpSingle3 = tmpSingle1 * tmpSingle1 + tmpSingle2 * tmpSingle2;
             //if (tmpSingle3 < 400) return; //Brian+: temporally marked for testing 
             
-            //Brian+ 2015/04/29: reset target_total and target_now to prevent old setting affect new setting   
-            target_total = 0;
-            target_now = 1;
+            //Brian+ 2015/05/04: clear path only for semi-auto mode because it support one target only
+            if (Mode == 2)
+            {
+                target_total = 0;
+                target_now = 1;
+            }
             
             if (walkable != 0)
             {
@@ -1212,16 +1258,8 @@ namespace Trilateration_Android
                     strSendMsg = "semiauto walkable 0";
                 else if (Mode == 3)
                     strSendMsg = "auto walkable 0";
-
-                var walkable_msg = new Matrix.Xmpp.Client.Message
-                {
-                    Type = Matrix.Xmpp.MessageType.Chat,
-                    To = strTargetName,
-                    Body = strSendMsg
-                };
-                xmppClient.Send(walkable_msg);
-
-                //return null;
+                xmppSendMsg(strSendMsg);
+                
             }
             else
             {
@@ -1230,13 +1268,7 @@ namespace Trilateration_Android
                 else if (Mode == 3)
                     strSendMsg = "auto walkable 1";
 
-                var walkable_msg = new Matrix.Xmpp.Client.Message
-                {
-                    Type = Matrix.Xmpp.MessageType.Chat,
-                    To = strTargetName,
-                    Body = strSendMsg
-                };
-                xmppClient.Send(walkable_msg);
+                xmppSendMsg(strSendMsg);
                 
                 target[0].X = myTag.Avg.X;
                 target[0].Y = myTag.Avg.Y;
@@ -1251,6 +1283,7 @@ namespace Trilateration_Android
                     if (myMap.Autoflag == true) myMap.action();
                     RunOnUiThread(() => textView.Append("Add " + myMap.path_Result.Count.ToString() + " targets\r\n"));
 
+                    if (myMap.path_Result.Count <= 0) return;
                     foreach (Point p in myMap.path_Result)
                     {
                         target_total++;
@@ -1281,15 +1314,14 @@ namespace Trilateration_Android
         private void tag_DataReceived(object sender, EventArgs e)
         {
             int readbuff;
-            int tmpInt1, tmpInt2;
+            int tmpInt1, tmpInt2, tmpInt3;
             String TagRecvData = null;
             Single tmpSingle1;
+            bool boolmsg;
 
             TagRecvData = Uart2C.ReceiveMsgUart(tag_open);
 
             byte[] byteArray = System.Text.Encoding.ASCII.GetBytes(TagRecvData);
-            //Log.Debug("Brian", "TagRecvData(Convert)=" + ToHexString(byteArray));
-            //Log.Debug("Brian", "TagRecvData(Length)=" + byteArray.Length);
 
             for (int i = 0; i < byteArray.Length; i++)
             {
@@ -1303,61 +1335,56 @@ namespace Trilateration_Android
                 else if (tagbufflen >= 17)
                 {
                     tagbufflen = 0;
-                    myTag.Rate = myTag.Rate + 1;
+                    myTag.Rate = (short)(myTag.Rate + 1);
 
                     tmpInt1 = (tagbuff[1] - 48) * 100 + (tagbuff[2] - 48) * 10 + (tagbuff[3] - 48);
                     tmpInt2 = (tagbuff[5] - 48) * 10 + (tagbuff[6] - 48);
-                    //Log.Debug("Brian", "tagbuff=" + ToHexString(tagbuff));
+                    tmpInt3 = tmpInt1 * 100 + tmpInt2;
+                    if (tmpInt3 == 0) return;
+
+                    Log.Debug("Brian", tagbuff[14].ToString() + ", " + tmpInt3.ToString());
+
                     if (tagbuff[14] == 0x31)    // anchor #1
                     {
-                        anchor1.Updated = true;
-                        anchor1.RangeOld = anchor1.Range;
-                        anchor1.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor1.Range) / 2);
-                        //Log.Debug("Brian", "anchor1.Range=" + anchor1.Range);
-                        hpcounter1.Stop();
-                        anchor1.SampleTime = hpcounter1.Duration;
-                        hpcounter1.Start();
-
-                        tmpSingle1 = (Single)(anchor1.SampleTime * cfg.MaxSpeed);
-                        if (Math.Abs(anchor1.Range - anchor1.RangeOld) > tmpSingle1)
-                        {
-                            if (anchor1.Range > anchor1.RangeOld) anchor1.Range = anchor1.RangeOld + tmpSingle1;
-                            else anchor1.Range = anchor1.RangeOld - tmpSingle1;
-                        }
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor1.RateSum);
+                        anchor1.Rate++;
+                        boolmsg = anchor1.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
                     }
                     else if (tagbuff[14] == 0x32)   // anchor #2
                     {
-                        anchor2.Updated = true;
-                        anchor2.RangeOld = anchor2.Range;
-                        anchor2.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor2.Range) / 2);
-                        //Log.Debug("Brian", "anchor2.Range=" + anchor2.Range);
-                        hpcounter2.Stop();
-                        anchor2.SampleTime = hpcounter2.Duration;
-                        hpcounter2.Start();
-
-                        tmpSingle1 = (Single)(anchor2.SampleTime * cfg.MaxSpeed);
-                        if (Math.Abs(anchor2.Range - anchor2.RangeOld) > tmpSingle1)
-                        {
-                            if (anchor2.Range > anchor2.RangeOld) anchor2.Range = anchor2.RangeOld + tmpSingle1;
-                            else anchor2.Range = anchor2.RangeOld - tmpSingle1;
-                        }
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor2.RateSum);
+                        anchor2.Rate++;
+                        boolmsg = anchor2.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
                     }
                     else if (tagbuff[14] == 0x33)   // anchor #3
                     {
-                        anchor3.Updated = true;
-                        anchor3.RangeOld = anchor3.Range;
-                        anchor3.Range = (short)(range_ratio / 100 * (tmpInt1 * 100 + tmpInt2 + anchor3.Range) / 2);
-                        //Log.Debug("Brian", "anchor3.Range=" + anchor3.Range);
-                        hpcounter3.Stop();
-                        anchor3.SampleTime = hpcounter3.Duration;
-                        hpcounter3.Start();
-
-                        tmpSingle1 = (Single)(anchor3.SampleTime * cfg.MaxSpeed);
-                        if (Math.Abs(anchor3.Range - anchor3.RangeOld) > tmpSingle1)
-                        {
-                            if (anchor3.Range > anchor3.RangeOld) anchor3.Range = anchor3.RangeOld + tmpSingle1;
-                            else anchor3.Range = anchor3.RangeOld - tmpSingle1;
-                        }
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor3.RateSum);
+                        anchor3.Rate++;
+                        boolmsg = anchor3.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
+                    }
+                    else if (tagbuff[14] == 0x34)   // anchor #4
+                    {
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor4.RateSum);
+                        anchor4.Rate++;
+                        boolmsg = anchor4.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
+                    }
+                    else if (tagbuff[14] == 0x35)   // anchor #5
+                    {
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor5.RateSum);
+                        anchor5.Rate++;
+                        boolmsg = anchor5.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
+                    }
+                    else if (tagbuff[14] == 0x36)   // anchor #6
+                    {
+                        //tmpSingle1 = (Single)(cfg.MaxSpeed / anchor6.RateSum);
+                        anchor6.Rate++;
+                        boolmsg = anchor6.SaveMeasure(tmpInt3, cfg.MaxSpeed);
+                        Log.Debug("Brian", boolmsg.ToString());
                     }
                 }
                 else
@@ -1388,96 +1415,43 @@ namespace Trilateration_Android
         private void driving_DataReceived(object sender, EventArgs e)
         {
             int readbuff;
+            int startindex;
             short tmpShort;
-            byte[] Pic32RecvData = new byte[255];
+            byte[] Pic32RecvData = new byte[50];
+
+            if (test_count > 1000) test_count = 0;
+            else test_count++;
+            
 
             Pic32RecvData = Uart2C.ReceiveMsgUartByte(pic32_open);
-            //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Raw)=" + Pic32RecvData);
-            //Log.Debug("Brian", "[driving_DataReceived]Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
-            //Log.Debug("Brian", "Pic32RecvData(Length)=" + byteArray.Length);
+			
+            //Log.Debug("Brian", "Pic32RecvData(Convert)=" + ToHexString(Pic32RecvData));
 
-            for (int j = 0; j < Pic32RecvData.Length; j++)
+            startindex = -1;
+            for (int j = 0; j < Pic32RecvData.Length-16 ; j++)
             {
-
-                readbuff = Pic32RecvData[j];
-
-                if (readbuff == 0x53)
+                if (Pic32RecvData[j] == 0x53 && Pic32RecvData[j + 1] == 0x20 && Pic32RecvData[j + 16] == 0x45)
                 {
-                    Array.Clear(drivingbuff, 0, 30);
-                    drivingbufflen = 0;
-                }
-                else if (drivingbufflen >= 12 && drivingbuff[0] == 0x20)
-                {
-                    drivingbufflen = 0;
-                    //Toby's patch
-                    tmpShort = (short)((drivingbuff[1] << 8) + drivingbuff[2]);
-                    tmpShort = (short)(tmpShort - cfg.MapEast);
-                    if (tmpShort < -360) tmpShort = (short)(tmpShort + 360);
-                    else if (tmpShort > 360) tmpShort = (short)(tmpShort - 360);
-                    if (tmpShort < 360 && tmpShort > -360)
-                    {
-                        myVehicle.compass = tmpShort;
-                    }
-                    tmpShort = (short)((drivingbuff[3] << 8) + drivingbuff[4]);
-                    if (tmpShort > 100) tmpShort = 100;
-                    else if (tmpShort < -100) tmpShort = -100;
-                    myVehicle.encoderL = (short)(myVehicle.encoderL + tmpShort);
-                    tmpShort = (short)((drivingbuff[5] << 8) + drivingbuff[6]);
-                    if (tmpShort > 100) tmpShort = 100;
-                    else if (tmpShort < -100) tmpShort = -100;
-                    myVehicle.encoderR = (short)(myVehicle.encoderR + tmpShort);
-                    //Toby's end
-                    //Log.Debug("Brian", "myVehicle.compass=" + myVehicle.compass);
-
-                    for (int i = 0; i <= 4; i++)
-                    {
-                        myVehicle.sonic[i] = drivingbuff[7 + i];
-                    }
-                }
-                else if (drivingbufflen >= 3 && drivingbuff[0] == 0x12)
-                {
-                    drivingbufflen = 0;
-                    if (drivingbuff[1] == 0x01) myCommand.vehicle_done = true;
-                }
-                else if (drivingbufflen >= 17 && drivingbuff[0] == 0x21)
-                {
-                    int[] data = new int[8];
-
-                    drivingbufflen = 0;
-                    wr.Write("{0:mm:ss} ", DateTime.Now);
-                    for (i = 0; i < 8; i++)
-                    {
-                        data[i] = ((drivingbuff[1 + i * 2] << 8) + drivingbuff[2 + i * 2]);
-                        if (data[i] > 32768) data[i] = data[i] - 65535;
-                        wr.Write("," + data[i].ToString());
-                    }
-                    wr.Write(anchor1.Range.ToString("f1") + ",");
-                    wr.Write(anchor2.Range.ToString("f1") + ",");
-                    wr.Write(anchor3.Range.ToString("f1") + ",");
-                    wr.Write("\r\n");
-                }
-                //Toby's patch
-                else if (drivingbufflen >= 12 && drivingbuff[0] == 0x22)
-                {
-                    drivingbufflen = 0;
-                    mOffset[0] = ((drivingbuff[1] << 8) + drivingbuff[2]);
-                    mOffset[1] = ((drivingbuff[3] << 8) + drivingbuff[4]);
-                    for (i = 0; i < 4; i++)
-                    {
-                        mMin[i] = ((drivingbuff[5 + i * 2] << 8) + drivingbuff[6 + i * 2]);
-                        wr.Write("max_y," + mMin[i].ToString() + "\r\n");
-                    }
-                    wr.Write("Offset," + mOffset[0].ToString() + "," + mOffset[1].ToString() + "\r\n");
-
-                }
-                //Toby's End
-                else
-                {
-                    if (drivingbufflen >= 30) drivingbufflen = 0;
-                    drivingbuff[drivingbufflen] = (byte)readbuff;
-                    drivingbufflen++;
+                    startindex = j + 1;
+                    break;
                 }
             }
+			
+			if(startindex > 0)
+			{
+                if ((startindex < Pic32RecvData.Length - 15 ) && (Pic32RecvData[startindex + 15] == 0x45))
+                {
+                    byte[] tmpArray = new byte[15];
+                    Array.Copy(Pic32RecvData, startindex, tmpArray, 0, 15);
+                    myVehicle.UpdatedAll(tmpArray);
+                }
+			}
+
+            TowardTargets.Vehicle.Bumper = myVehicle.Bumper;
+            for (int i = 0; i < 5; i++) TowardTargets.Vehicle.sonic[i] = myVehicle.sonic[i];
+            //tmpString = test_count.ToString() +" D=" + myVehicle.compass.ToString() + ", Sonic=" + myVehicle.sonic[0].ToString() + "," + myVehicle.sonic[1].ToString() + "," + myVehicle.sonic[2].ToString() + "," + myVehicle.sonic[3].ToString() + "," + myVehicle.sonic[4].ToString() + "," + myVehicle.sonic[5].ToString() + "," + myVehicle.sonic[6].ToString() + ", B=" + myVehicle.Bumper.ToString();
+
+            //RunOnUiThread(() => labelTable.Text = tmpString);
         }
 
         private void SetAppearance()
@@ -1508,91 +1482,47 @@ namespace Trilateration_Android
         {
             string tmpString;
             Single std_x, std_y;
+            Single[] tmpSingleA = new Single[6];
 
-            RunOnUiThread(() => buttonTest2.Text = test_str);
-            myTag.Rate--;
-
-            // labelTable
-            //labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message;
-            RunOnUiThread(() => labelTable.Text = "    Range,   Rate\r\nA " + anchor1.Message + "\r\nB " + anchor2.Message + "\r\nC " + anchor3.Message);
-            RunOnUiThread(() => labelTableC.Text = "    Range,   Rate\r\nC " + anchor3.Message);
-
-            //Toby's patch
-            tmpString = " D=" + myVehicle.compass.ToString() + ", X=" + myTag.X.ToString("f1") + ", Y=" + myTag.Y.ToString("f1");
-            //tmpString = tmpString + "\r\nCursor : " + mouse_position.X.ToString("f0") + ", " + mouse_position.Y.ToString("f0");
-            //Toby's end
-
-            //labelVehicle.Text = tmpString;
-            RunOnUiThread(() => labelVehicle.Text = tmpString);
-
-            if (myFlag.loc_init_step == 0)
+            if (!myFlag.loc_init_done)
             {
-                myFlag.loc_init_done = false;
-                RunOnUiThread(() => textView.Append("Searching for beacon...\r\n"));
-                //Log.Debug("Brian", "Searching for beacon...");
-                if (loc_initial())
-                {
-                    myFlag.loc_init_step = 1;
-                    //myFlag.loc_init_done = true;
-                    Thread local1 = new Thread(new ParameterizedThreadStart(loc_preliminary));
-                    local1.IsBackground = true;
-                    local1.Start(20);
-                    RunOnUiThread(() => textView.Append("Beacon found.\r\n"));
-                    //Log.Debug("Brian", "Beacon found!!");
-                    bBeaconFind = true;
-
-                }
-                else
-                {
-                    myFlag.loc_init_done = false;
-                    RunOnUiThread(() => textView.Append("Beacon doesn't exist.\r\n"));
-                    //Log.Debug("Brian", "Beacon doesn't exist!!");
-                }
+                myFlag.loc_init_done = loc_initial();
             }
-            if (myFlag.loc_init_step == 2)
+            else
             {
-                Single[] tmpSingleA = new Single[3];
-                myEKF = new class_EKFL5(myTag.X, myTag.Y, 0f);
-                tmpSingleA[0] = anchor1.X;
-                tmpSingleA[1] = anchor2.X;
-                tmpSingleA[2] = anchor3.X;
-                myEKF.AX = tmpSingleA;
-                tmpSingleA[0] = anchor1.Y;
-                tmpSingleA[1] = anchor2.Y;
-                tmpSingleA[2] = anchor3.Y;
-                myEKF.AY = tmpSingleA;
-                tmpSingleA[0] = anchor1.Z;
-                tmpSingleA[1] = anchor2.Z;
-                tmpSingleA[2] = anchor3.Z;
-                myEKF.AZ = tmpSingleA;
-                myFlag.loc_init_step = 3;
-                myFlag.loc_init_done = true;
-            }
-
-            if (myFlag.loc_init_done)
-            {
-                Single[] tmpSingleA = new Single[3];
-
-                //Toby's patch
+                // Give all infomation EKF needed
                 hpcounter4.Stop();
-                myEKF.dT = (Single)hpcounter4.Duration * 1000f;
+                myEKF.dT = (Single)hpcounter4.Duration;
+                //Log.Debug("Brian", "dT= "+ myEKF.dT.ToString());
                 hpcounter4.Start();
-                myEKF.EncoderL = myVehicle.encoderL;
-                myEKF.EncoderR = myVehicle.encoderR;
-                myVehicle.encoderL = 0;
-                myVehicle.encoderR = 0;
-                //Toby's done
-
-                tmpSingleA[0] = anchor1.Range;
-                tmpSingleA[1] = anchor2.Range;
-                tmpSingleA[2] = anchor3.Range;
+                myEKF.Velocity = myVehicle.V;
+                myEKF.Omega = myVehicle.W;
+                if (anchor1.RateSum <= 1) tmpSingleA[0] = 0;
+                else if (anchor1.Range > 1800) tmpSingleA[0] = 0;
+                else tmpSingleA[0] = anchor1.Range;
+                if (anchor2.RateSum <= 1) tmpSingleA[1] = 0;
+                else if (anchor2.Range > 1800) tmpSingleA[1] = 0;
+                else tmpSingleA[1] = anchor2.Range;
+                if (anchor3.RateSum <= 1) tmpSingleA[2] = 0;
+                else if (anchor3.Range > 1800) tmpSingleA[2] = 0;
+                else tmpSingleA[2] = anchor3.Range;
+                if (anchor4.RateSum <= 1) tmpSingleA[3] = 0;
+                else if (anchor4.Range > 1800) tmpSingleA[3] = 0;
+                else tmpSingleA[3] = anchor4.Range;
+                if (anchor5.RateSum <= 1) tmpSingleA[4] = 0;
+                else if (anchor5.Range > 1800) tmpSingleA[4] = 0;
+                else tmpSingleA[4] = anchor5.Range;
+                if (anchor6.RateSum <= 1) tmpSingleA[5] = 0;
+                else if (anchor6.Range > 1800) tmpSingleA[5] = 0;
+                else tmpSingleA[5] = anchor6.Range;
                 myEKF.ARange = tmpSingleA;
+                // Perform calculation
                 myEKF.Calculation();
+                // Retrieve results
                 myTag.X = myEKF.tagX;
                 myTag.Y = myEKF.tagY;
-                //Log.Debug("Brian", "[After_EKF]myTag.X=" + myTag.X + "," + "mytag.Y=" + myTag.Y);
-                renew_anchor_disp();
-
+                 
+                // Calculate avg & stdev
                 for (int j = myTag_Old_X.Length - 1; j >= 1; j--)
                 {
                     myTag_Old_X[j] = myTag_Old_X[j - 1];
@@ -1602,58 +1532,104 @@ namespace Trilateration_Android
                 myTag_Old_Y[0] = myTag.Y;
                 avg_stdev(out myTag.Avg.X, out std_x, myTag_Old_X);
                 avg_stdev(out myTag.Avg.Y, out std_y, myTag_Old_Y);
-                TowardOneTarget.Pose.X = myTag.Avg.X;
-                TowardOneTarget.Pose.Y = myTag.Avg.Y;
-                TowardOneTarget.Pose.Theta = myVehicle.compass;
-                for (i = 0; i < 5; i++) TowardOneTarget.Vehicle.sonic[i] = myVehicle.sonic[i];
-                myFlag.sampling = true; //Toby's patch
+
+                // Feed results to TowardTargets
+                TowardTargets.Pose.X = myTag.Avg.X;
+                TowardTargets.Pose.Y = myTag.Avg.Y;
+                TowardTargets.Pose.Theta = myVehicle.compass;
+                TowardTargets.Vehicle.Bumper = myVehicle.Bumper;
+                for (i = 0; i < 5; i++) TowardTargets.Vehicle.sonic[i] = myVehicle.sonic[i];
             }
 
-            if (myFlag.moving)
+            RunOnUiThread(() => labelTable.Text = "    Range,   Rate\r\nA." + anchor1.Message + " B." + anchor2.Message + " C." + anchor3.Message);
+            RunOnUiThread(() => labelTableC.Text = "D." + anchor4.Message + " E." + anchor5.Message + " F." + anchor6.Message);
+                        
+            tmpString = " D=" + myVehicle.compass.ToString() + ", x=" + myTag.Avg.X.ToString("f1") + " y=" + myTag.Avg.Y.ToString("f1");
+            RunOnUiThread(() => labelVehicle.Text = tmpString);
+
+            if (TowardTargets.Status != TowardTargets.e_status.None)
             {
                 wr.Write("{0:mm:ss} ", DateTime.Now);
-                wr.Write(myCommand.turn.ToString());
+                wr.Write(TowardTargets.Status.ToString() + ",");
+                wr.Write(TowardTargets.OutSpeed.ToString() + ",");
+                wr.Write(TowardTargets.OutTurn.ToString() + ",");
+                if(anchor1.RateSum>0) wr.Write(anchor1.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                if (anchor2.RateSum > 0) wr.Write(anchor2.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                if (anchor3.RateSum > 0) wr.Write(anchor3.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                if (anchor4.RateSum > 0) wr.Write(anchor4.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                if (anchor5.RateSum > 0) wr.Write(anchor5.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                if (anchor6.RateSum > 0) wr.Write(anchor6.Range.ToString("f1") + ",");
+                else wr.Write("0,");
+                wr.Write(myVehicle.compass.ToString("f1") + ",");
+                wr.Write(myTag.Avg.X.ToString("f1") + "," + myTag.Avg.Y.ToString("f1"));
                 wr.Write("\r\n");
-
-                //Brian+ 2015/03/31: Log some data to log file
-                if (true)
-                {
-                    //fwr.WriteLine("----------------------------------------------");
-                    //fwr.WriteLine("anchor1.Range=" + anchor1.Range.ToString("f1"));
-                    //fwr.WriteLine("anchor2.Range=" + anchor2.Range.ToString("f1"));
-                    //fwr.WriteLine("anchor3.Range=" + anchor3.Range.ToString("f1"));
-                    //fwr.WriteLine("myTag.X=" + myTag.X.ToString("f1") + " ," + "myTag.Y=" + myTag.Y.ToString("f1"));
-                    //fwr.WriteLine("----------------------------------------------");
-                }
-
-                //Toby's patch
-                /* 
-                if (checkBoxRecord.Checked)
-                {
-                    wr.Write(myEKF.dT.ToString("f1") + ",");
-                    wr.Write(TowardOneTarget.OutSpeed.ToString() + ",");
-                    wr.Write(TowardOneTarget.OutTurn.ToString() + ",");
-                    wr.Write(anchor1.Range.ToString("f1") + ",");
-                    wr.Write(anchor2.Range.ToString("f1") + ",");
-                    wr.Write(anchor3.Range.ToString("f1") + ",");
-                    wr.Write(myEKF.EncoderL.ToString() + ",");
-                    wr.Write(myEKF.EncoderR.ToString() + ",");
-                    wr.Write(myVehicle.compass.ToString("f1") + ",");
-                    wr.Write(myTag.X.ToString("f1") + "," + myTag.Y.ToString("f1"));
-                    wr.Write("\r\n");
-                    //wr.Flush();
-                }
-                */
-                //Toby's end
+                wr.Flush();
             }
             RunOnUiThread(() => view.Invalidate());
+
+            if (TowardTargets.Status == TowardTargets.e_status.Finish)
+            {
+                target_total = 0;
+                target_now = 1;
+                TowardTargets.Status = TowardTargets.e_status.None;
+
+                //Brian+ 2015/05/07: Send reach target XMPP message to pad
+                string strReachMsg="";
+
+                if (NaviMode == 2)
+                {
+                    strReachMsg = "semiauto end";
+                    xmppSendMsg(strReachMsg);
+                }
+                else if (NaviMode == 3)
+                {
+
+                    if (AutoTargetNow < AutoTargetAmount - 1)
+                    {
+                        //DateTime dtReachTime = DateTime.Now;
+                        iScheduleTime = DateTime.Now.Hour * 60 + DateTime.Now.Minute + AutoTarget[AutoTargetNow].StopTime;
+                        if (iScheduleTime >= 1440) //24 hour x 60 min
+                            iScheduleTime = iScheduleTime - 1440;
+                        
+                        AutoTargetNow++;
+                        //Log.Debug("Brian", "Reach number " + AutoTargetNow + "target, prepare to next one!!");
+                        wr.Write("[Auto]Reach target number " + AutoTargetNow + ", prepare to next target at " + iScheduleTime / 60 + ":" +
+                                 iScheduleTime % 60);
+                        wr.Write("\r\n");
+                        wr.Flush();
+                    }
+                    else
+                    {
+                        AutoTargetNow = 0;
+                        AutoTargetAmount = 0;
+                        AutoModeTimer.Close();
+                        strReachMsg = "auto end";
+                        xmppSendMsg(strReachMsg);
+                        //Log.Debug("Brian", "Reach number " + AutoTargetNow + "target, prepare to next one!!");
+                        wr.Write("Reach the last target, Stop auto navigation!!");
+                        wr.Write("\r\n");
+                        wr.Flush();
+                        //wr.Close();
+                    }
+
+                }
+                              
+            }
+
+            if (TowardTargets.Status == TowardTargets.e_status.None) myFlag.moving = false;
+            else myFlag.moving = true;
         }
 
         //Brian+ 2015/04/23: Add SendManualCommand() for sending manual command to PIC32
         private void SendManualCommand(int fd, string direction)
         {
             byte[] outbyte = new byte[6];
-            
+
             outbyte[0] = 0x53;
             outbyte[1] = 0x11;
             outbyte[3] = 0x00;
@@ -1680,84 +1656,38 @@ namespace Trilateration_Android
             Uart2C.SendMsgUart(pic32_open, outbyte);
         }
 
-        private void OutCommand(move_command command)
-        {
-            byte[] outbyte = new byte[10];
-            //int outbytelen = 0;
+        private void renew_anchor_rate()
+        {	
+			while(true)
+			{
+                Thread.Sleep(1000);
+				anchor1.RateSum = anchor1.Rate;
+				anchor1.Rate = 0;
+				anchor2.RateSum = anchor2.Rate;
+				anchor2.Rate = 0;
+				anchor3.RateSum = anchor3.Rate;
+				anchor3.Rate = 0;
+                anchor4.RateSum = anchor4.Rate;
+                anchor4.Rate = 0;
+                anchor5.RateSum = anchor5.Rate;
+                anchor5.Rate = 0;
+                anchor6.RateSum = anchor6.Rate;
+                anchor6.Rate = 0;
 
-            if (command.speed == 0 && command.turn != 0)
-            {
-                outbyte[0] = 0x53;
-                outbyte[1] = 0x12;
-                outbyte[2] = (byte)((command.turn >> 8) & 0xFF);
-                outbyte[3] = (byte)(command.turn & 0xFF);
-                outbyte[4] = 0x00;
-                outbyte[5] = 0x45;
-                //Log.Debug("Brian", "[OutCommnad]event1 trigger!!");
-
-                Uart2C.SendMsgUart(pic32_open, outbyte);
-            }
-            else
-            {
-                if (command.speed > 100) command.speed = 100;
-                else if (command.speed < -100) command.speed = -100;
-                if (command.turn > 100) command.turn = 100;
-                else if (command.turn < -100) command.turn = -100;
-
-                outbyte[0] = 0x53;
-                outbyte[1] = 0x13;
-                outbyte[2] = (byte)(command.speed & 0xFF);
-                outbyte[3] = (byte)(command.turn & 0xFF);
-                outbyte[4] = 0x00;
-                outbyte[5] = 0x45;
-                //Log.Debug("Brian", "[OutCommnad]event2 trigger!!");
-                Uart2C.SendMsgUart(pic32_open, outbyte);
-            }
-
-        }
-
-        private void renew_anchor_disp()
-        {
-            Single tmpSingle1;
-            int Rate_total;
-
-            if (anchor1.Updated || anchor2.Updated || anchor3.Updated)
-            {
-                // reset receiving rate
-                if (anchor1.Rate >= 100 || anchor2.Rate >= 100 || anchor3.Rate >= 100)
-                {
-                    tmpSingle1 = anchor1.Rate * 0.1f;
-                    anchor1.Rate = (int)tmpSingle1;
-                    tmpSingle1 = anchor2.Rate * 0.1f;
-                    anchor2.Rate = (int)tmpSingle1;
-                    tmpSingle1 = anchor3.Rate * 0.1f;
-                    anchor3.Rate = (int)tmpSingle1;
-                }
-                Rate_total = anchor1.Rate + anchor2.Rate + anchor3.Rate + 1;
-
-                if (anchor1.Updated)
-                {
-                    anchor1.Updated = false;
-                    anchor1.Rate = anchor1.Rate + 1;
-                }
-                if (anchor2.Updated)
-                {
-                    anchor2.Updated = false;
-                    anchor2.Rate = anchor2.Rate + 1;
-                }
-                if (anchor3.Updated)
-                {
-                    anchor3.Updated = false;
-                    anchor3.Rate = anchor3.Rate + 1;
-                }
-
-                tmpSingle1 = (Single)(anchor1.Rate * myTag.Rate / Rate_total);
-                anchor1.Message = anchor1.Range.ToString("f1") + " cm  " + tmpSingle1.ToString("f1") + " %";
-                tmpSingle1 = (Single)(anchor2.Rate * myTag.Rate / Rate_total);
-                anchor2.Message = anchor2.Range.ToString("f1") + " cm  " + tmpSingle1.ToString("f1") + " %";
-                tmpSingle1 = (Single)(anchor3.Rate * myTag.Rate / Rate_total);
-                anchor3.Message = anchor3.Range.ToString("f1") + " cm  " + tmpSingle1.ToString("f1") + " %";
-            }
+				if(anchor1.RateSum > 0) anchor1.Message = anchor1.Range.ToString("f0") + " cm  " + anchor1.RateSum.ToString() + " /s";
+				else anchor1.Message = "offline";
+                if(anchor2.RateSum > 0) anchor2.Message = anchor2.Range.ToString("f0") + " cm  " + anchor2.RateSum.ToString() + " /s";
+				else anchor2.Message = "offline";
+                if(anchor3.RateSum > 0) anchor3.Message = anchor3.Range.ToString("f0") + " cm  " + anchor3.RateSum.ToString() + " /s";
+				else anchor3.Message = "offline";
+                if (anchor4.RateSum > 0) anchor4.Message = anchor4.Range.ToString("f0") + " cm  " + anchor4.RateSum.ToString() + " /s";
+                else anchor4.Message = "offline";
+                if (anchor5.RateSum > 0) anchor5.Message = anchor5.Range.ToString("f0") + " cm  " + anchor5.RateSum.ToString() + " /s";
+                else anchor5.Message = "offline";
+                if (anchor6.RateSum > 0) anchor6.Message = anchor6.Range.ToString("f0") + " cm  " + anchor6.RateSum.ToString() + " /s";
+                else anchor6.Message = "offline";
+			}
+			
         }
 
         protected override void OnDestroy()
@@ -1771,8 +1701,10 @@ namespace Trilateration_Android
             //fwr.Write("{0:mm:ss} ", DateTime.Now);
             //fwr.Write("Program End\r\n");
             //fwr.Close();
-
+                        
             base.OnDestroy();
+             
+
         }
 
         private bool ReadConfig(string ff)
@@ -1793,20 +1725,8 @@ namespace Trilateration_Android
                     else if (linesplit[0] == "mapeast") cfg.MapEast = Convert.ToInt16(linesplit[1]);
                     else if (linesplit[0] == "gridwidth") cfg.GridWidth = Convert.ToUInt16(linesplit[1]);
                     else if (linesplit[0] == "gridheight") cfg.GridHeight = Convert.ToUInt16(linesplit[1]);
-                    //else if (linesplit[0] == "control_inv") cfg.ControlInv = Convert.ToUInt16(linesplit[1]);
                     else if (linesplit[0] == "agent_max_speed") cfg.MaxSpeed = Convert.ToUInt16(linesplit[1]);
-                    else if (linesplit[0] == "iteration")
-                    {
-                        tmpInt = Convert.ToInt16(linesplit[1]);
-                        Iteration.Node_num = tmpInt;
-                        Iteration.Repeat_num = 10;
-                        Iteration.Busy = false;
-                        for (i = 0; i < tmpInt; i++)
-                        {
-                            Iteration.Location[i].X = Convert.ToInt16(linesplit[2 + i * 2]);
-                            Iteration.Location[i].Y = Convert.ToInt16(linesplit[3 + i * 2]);
-                        }
-                    }
+                    
                 }
                 sr.Close();
                 return true;
@@ -1816,519 +1736,177 @@ namespace Trilateration_Android
 
         private bool loc_initial()
         {
+            beacon[] candidate = new beacon[6]; 
+            Single[] tmpSingleA = new Single[6];
             int anchor_count = 0;
-            ushort tmpShort;
 
-            anchor1.Rate = 0;
-            anchor2.Rate = 0;
-            anchor3.Rate = 0;
-            myTag.Rate = 100;
-            anchor1.Range = 0;
-            anchor2.Range = 0;
-            anchor3.Range = 0;
-            myTag.Range = 0;
-            anchor1.Message = "";
-            anchor2.Message = "";
-            anchor3.Message = "";
-            myTag.Message = "";
-            tmpShort = cfg.MaxSpeed;
-            cfg.MaxSpeed = 1000;
-
-            Thread.Sleep(500);
-            if (anchor1.Range != 0) anchor_count++;
-            if (anchor2.Range != 0) anchor_count++;
-            if (anchor3.Range != 0) anchor_count++;
-            cfg.MaxSpeed = tmpShort;
-            //Log.Debug("Brian", "anchor1.Range=" + anchor1.Range);
-            //Log.Debug("Brian", "anchor2.Range=" + anchor2.Range);
-            //Log.Debug("Brian", "anchor3.Range=" + anchor3.Range);
-            if (anchor_count < 2)
+            if (anchor1.RateSum > 1 && anchor1.Range > 0)
             {
+                candidate[anchor_count] = anchor1;
+                anchor_count++;
+            }
+            if (anchor2.RateSum > 1 && anchor2.Range > 0)
+            {
+                candidate[anchor_count] = anchor2;
+                anchor_count++;
+            }
+            if (anchor3.RateSum > 1 && anchor3.Range > 0)
+            {
+                candidate[anchor_count] = anchor3;
+                anchor_count++;
+            }
+            if (anchor4.RateSum > 1 && anchor4.Range > 0)
+            {
+                candidate[anchor_count] = anchor4;
+                anchor_count++;
+            }
+            if (anchor5.RateSum > 1 && anchor5.Range > 0)
+            {
+                candidate[anchor_count] = anchor5;
+                anchor_count++;
+            }
+            if (anchor6.RateSum > 1 && anchor6.Range > 0)
+            {
+                candidate[anchor_count] = anchor6;
+                anchor_count++;
+            }
+
+            if (anchor_count < 3)
+            {
+                RunOnUiThread(() => textView.Append("Searching for beacon...\r\n"));
                 return false;
             }
             else
             {
+                RunOnUiThread(() => textView.Append("Beacon found.\r\n"));
+                if (!loc_trilateration(candidate[0], candidate[1], candidate[2])) return false;
+                Log.Debug("Brian", "Beacon found!!");
+
+                myEKF = new class_EKFL5(myTag.X, myTag.Y, 0f);
+                tmpSingleA[0] = anchor1.X;
+                tmpSingleA[1] = anchor2.X;
+                tmpSingleA[2] = anchor3.X;
+                tmpSingleA[3] = anchor4.X;
+                tmpSingleA[4] = anchor5.X;
+                tmpSingleA[5] = anchor6.X;
+                myEKF.AX = tmpSingleA;
+                tmpSingleA[0] = anchor1.Y;
+                tmpSingleA[1] = anchor2.Y;
+                tmpSingleA[2] = anchor3.Y;
+                tmpSingleA[3] = anchor4.Y;
+                tmpSingleA[4] = anchor5.Y;
+                tmpSingleA[5] = anchor6.Y;
+                myEKF.AY = tmpSingleA;
+                tmpSingleA[0] = anchor1.Z;
+                tmpSingleA[1] = anchor2.Z;
+                tmpSingleA[2] = anchor3.Z;
+                tmpSingleA[3] = anchor4.Z;
+                tmpSingleA[4] = anchor5.Z;
+                tmpSingleA[5] = anchor6.Z;
+                myEKF.AZ = tmpSingleA;
+
                 return true;
             }
         }
 
-        private void loc_preliminary(object arg)
+        /// <summary>
+        /// Give any 3 valid anchors then return the x, y position 
+        /// </summary>
+        private bool loc_trilateration(beacon anchorA, beacon anchorB, beacon anchorC)
         {
-            int i, cycles;
-            Single x, y, x2, y2, x3, y3;
-            Single ca, cb, cc, cd, ce, cf, cg;
-            Single std_x, std_y;
+            Single x, y, x1, y1, x2, y2, x3, y3;
+            Single ca, cb, cc, cd, ce, cf, cg, ch, ci;
+            bool v1, v2, v3;
+            short count;
 
-            cycles = Convert.ToInt32(arg);
-            for (i = 0; i < cycles; i++)
+            // calculate trilateration
+            ca = anchorB.X - anchorA.X;
+            cb = anchorB.Y - anchorA.Y;
+            cc = (Single)(Math.Pow(anchorA.Range, 2) - Math.Pow(anchorB.Range, 2) - Math.Pow(anchorA.X, 2) + Math.Pow(anchorB.X, 2) - Math.Pow(anchorA.Y, 2) + Math.Pow(anchorB.Y, 2));
+            cd = anchorB.X - anchorC.X;
+            ce = anchorB.Y - anchorC.Y;
+            cf = (Single)(Math.Pow(anchorC.Range, 2) - Math.Pow(anchorB.Range, 2) - Math.Pow(anchorC.X, 2) + Math.Pow(anchorB.X, 2) - Math.Pow(anchorC.Y, 2) + Math.Pow(anchorB.Y, 2));
+            cg = anchorA.X - anchorC.X;
+            ch = anchorA.Y - anchorC.Y;
+            ci = (Single)(Math.Pow(anchorC.Range, 2) - Math.Pow(anchorA.Range, 2) - Math.Pow(anchorC.X, 2) + Math.Pow(anchorA.X, 2) - Math.Pow(anchorC.Y, 2) + Math.Pow(anchorA.Y, 2));
+            if (cd * cb == ca * ce)
             {
-                // calculate avg & stdev
-                avg_stdev(out myTag.Avg.X, out std_x, myTag_Old_X);
-                avg_stdev(out myTag.Avg.Y, out std_y, myTag_Old_Y);
-
-                // calculate trilateration
-                ca = anchor1.X - anchor2.X;
-                cb = anchor1.Y - anchor2.Y;
-                cc = 0.5f * ((anchor2.Range * anchor2.Range - anchor3.Range * anchor3.Range) - (anchor2.X * anchor2.X - anchor3.X * anchor3.X) - (anchor2.Y * anchor2.Y - anchor3.Y * anchor3.Y));
-                cd = anchor3.X - anchor2.X;
-                ce = anchor3.Y - anchor2.Y;
-                cf = 0.5f * ((anchor2.Range * anchor2.Range - anchor1.Range * anchor1.Range) - (anchor2.X * anchor2.X - anchor1.X * anchor1.X) - (anchor2.Y * anchor2.Y - anchor1.Y * anchor1.Y));
-                cg = cb * cd - ce * ca;
-                if (cg == 0) y = 0;
-                else y = (cf * cd - cc * ca) / cg;
-                if (cd == 0) x = 0;
-                else x = (cc - y * ce) / cd;
-                ca = anchor2.X - anchor1.X;
-                cb = anchor2.Y - anchor1.Y;
-                cc = 0.5f * ((anchor1.Range * anchor1.Range - anchor3.Range * anchor3.Range) - (anchor1.X * anchor1.X - anchor3.X * anchor3.X) - (anchor1.Y * anchor1.Y - anchor3.Y * anchor3.Y));
-                cd = anchor3.X - anchor1.X;
-                ce = anchor3.Y - anchor1.Y;
-                cf = 0.5f * ((anchor1.Range * anchor1.Range - anchor2.Range * anchor2.Range) - (anchor1.X * anchor1.X - anchor2.X * anchor2.X) - (anchor1.Y * anchor1.Y - anchor2.Y * anchor2.Y));
-                cg = cb * cd - ce * ca;
-                if (cg == 0) y2 = 0;
-                else y2 = (cf * cd - cc * ca) / cg;
-                if (cd == 0) x2 = 0;
-                else x2 = (cc - y2 * ce) / cd;
-                ca = anchor3.X - anchor1.X;
-                cb = anchor3.Y - anchor1.Y;
-                cc = 0.5f * ((anchor1.Range * anchor1.Range - anchor2.Range * anchor2.Range) - (anchor1.X * anchor1.X - anchor2.X * anchor2.X) - (anchor1.Y * anchor1.Y - anchor2.Y * anchor2.Y));
-                cd = anchor2.X - anchor1.X;
-                ce = anchor2.Y - anchor1.Y;
-                cf = 0.5f * ((anchor1.Range * anchor1.Range - anchor3.Range * anchor3.Range) - (anchor1.X * anchor1.X - anchor3.X * anchor3.X) - (anchor1.Y * anchor1.Y - anchor3.Y * anchor3.Y));
-                cg = cb * cd - ce * ca;
-                if (cg == 0) y3 = 0;
-                else y3 = (cf * cd - cc * ca) / cg;
-                if (cd == 0) x3 = 0;
-                else x3 = (cc - y3 * ce) / cd;
-
-                myTag.X = (myTag.Avg.X * 3 + x + x3) / 5;
-                myTag.Y = (myTag.Avg.Y * 3 + y + y3) / 5;
-
-                // update old positions no matter the new range received or not 
-                for (int j = myTag_Old_X.Length - 1; j >= 1; j--)
-                {
-                    myTag_Old_X[j] = myTag_Old_X[j - 1];
-                    myTag_Old_Y[j] = myTag_Old_Y[j - 1];
-                }
-                myTag_Old_X[0] = myTag.X;
-                myTag_Old_Y[0] = myTag.Y;
-
-                Thread.Sleep(200);
+                x1 = 0;
+                y1 = 0;
+                v1 = false;
+            }
+            else
+            {
+                y1 = 0.5f * (cd * cc - ca * cf) / (cd * cb - ca * ce);
+                if (ca == 0) x1 = (cf - 2 * ce * y1) / (2 * cd);
+                else x1 = (cc - 2 * cb * y1) / (2 * ca);
+                v1 = true;
+            }
+            if (cg * cb == ca * ch)
+            {
+                x2 = 0;
+                y2 = 0;
+                v2 = false;
+            }
+            else
+            {
+                y2 = 0.5f * (cg * cc - ca * ci) / (cg * cb - ca * ch);
+                if (ca == 0) x2 = (ci - 2 * ch * y2) / (2 * cg);
+                else x2 = (cc - 2 * cb * y2) / (2 * ca);
+                v2 = true;
+            }
+            if (cg * ce == cd * ch)
+            {
+                x3 = 0;
+                y3 = 0;
+                v3 = false;
+            }
+            else
+            {
+                y3 = 0.5f * (cg * cf - cd * ci) / (cg * ce - cd * ch);
+                if (cd == 0) x3 = (ci - 2 * ch * y3) / (2 * cg);
+                else x3 = (cf - 2 * ce * y3) / (2 * cd);
+                v3 = true;
             }
 
-            myFlag.loc_init_step = 2;
-        }
-
-        private void loc_calculation()
-        {
-            Single x, y, x2, y2, x3, y3;
-            Single ca, cb, cc, cd, ce, cf, cg;
-            Single std_x, std_y;
-            Single tmpSingle1;
-            int Rate_total;
-
-            while (true)
+            x = 0;
+            y = 0;
+            count = 0;
+            if(v1)
             {
-                if (anchor1.Updated || anchor2.Updated || anchor3.Updated)
-                {
-                    // reset receiving rate
-                    if (anchor1.Rate >= 100 || anchor2.Rate >= 100 || anchor3.Rate >= 100)
-                    {
-                        tmpSingle1 = anchor1.Rate * 0.1f;
-                        anchor1.Rate = (int)tmpSingle1;
-                        tmpSingle1 = anchor2.Rate * 0.1f;
-                        anchor2.Rate = (int)tmpSingle1;
-                        tmpSingle1 = anchor3.Rate * 0.1f;
-                        anchor3.Rate = (int)tmpSingle1;
-                    }
-                    Rate_total = anchor1.Rate + anchor2.Rate + anchor3.Rate + 1;
-
-                    // calculate avg & stdev
-                    avg_stdev(out myTag.Avg.X, out std_x, myTag_Old_X);
-                    avg_stdev(out myTag.Avg.Y, out std_y, myTag_Old_Y);
-
-                    if (anchor1.Updated)
-                    {
-                        anchor1.Updated = false;
-                        anchor1.Rate = anchor1.Rate + 1;
-                        tmpSingle1 = Math.Abs(anchor1.Range - anchor1.RangeOld);
-                        if (tmpSingle1 > anchor1.SampleTime * cfg.MaxSpeed)
-                        {
-                            if (anchor1.Range > anchor1.RangeOld) anchor1.Range = anchor1.RangeOld + (Single)(anchor1.SampleTime * cfg.MaxSpeed);
-                            else anchor1.Range = anchor1.RangeOld - (Single)(anchor1.SampleTime * cfg.MaxSpeed);
-                        }
-                        tmpSingle1 = (Single)(anchor1.Rate * myTag.Rate / Rate_total);
-                        anchor1.Message = anchor1.Range.ToString("f1") + " cm\r\n" + tmpSingle1.ToString("f1") + "%\r\n";
-                    }
-                    if (anchor2.Updated)
-                    {
-                        anchor2.Updated = false;
-                        anchor2.Rate = anchor2.Rate + 1;
-                        tmpSingle1 = Math.Abs(anchor2.Range - anchor2.RangeOld);
-                        if (tmpSingle1 > anchor2.SampleTime * cfg.MaxSpeed)
-                        {
-                            if (anchor2.Range > anchor2.RangeOld) anchor2.Range = anchor2.RangeOld + (Single)(anchor2.SampleTime * cfg.MaxSpeed);
-                            else anchor2.Range = anchor2.RangeOld - (Single)(anchor2.SampleTime * cfg.MaxSpeed);
-                        }
-                        tmpSingle1 = (Single)(anchor2.Rate * myTag.Rate / Rate_total);
-                        anchor2.Message = anchor2.Range.ToString("f1") + " cm\r\n" + tmpSingle1.ToString("f1") + "%";
-                    }
-                    if (anchor3.Updated)
-                    {
-                        anchor3.Updated = false;
-                        anchor3.Rate = anchor3.Rate + 1;
-                        tmpSingle1 = Math.Abs(anchor3.Range - anchor3.RangeOld);
-                        if (tmpSingle1 > anchor3.SampleTime * cfg.MaxSpeed)
-                        {
-                            if (anchor3.Range > anchor3.RangeOld) anchor3.Range = anchor3.RangeOld + (Single)(anchor3.SampleTime * cfg.MaxSpeed);
-                            else anchor3.Range = anchor3.RangeOld - (Single)(anchor3.SampleTime * cfg.MaxSpeed);
-                        }
-                        tmpSingle1 = (Single)(anchor3.Rate * myTag.Rate / Rate_total);
-                        anchor3.Message = anchor3.Range.ToString("f1") + " cm\r\n" + tmpSingle1.ToString("f1") + "%";
-                    }
-
-                    // calculate trilateration
-                    ca = anchor1.X - anchor2.X;
-                    cb = anchor1.Y - anchor2.Y;
-                    cc = 0.5f * ((anchor2.Range * anchor2.Range - anchor3.Range * anchor3.Range) - (anchor2.X * anchor2.X - anchor3.X * anchor3.X) - (anchor2.Y * anchor2.Y - anchor3.Y * anchor3.Y));
-                    cd = anchor3.X - anchor2.X;
-                    ce = anchor3.Y - anchor2.Y;
-                    cf = 0.5f * ((anchor2.Range * anchor2.Range - anchor1.Range * anchor1.Range) - (anchor2.X * anchor2.X - anchor1.X * anchor1.X) - (anchor2.Y * anchor2.Y - anchor1.Y * anchor1.Y));
-                    cg = cb * cd - ce * ca;
-                    if (cg == 0) y = 0;
-                    else y = (cf * cd - cc * ca) / cg;
-                    if (cd == 0) x = 0;
-                    else x = (cc - y * ce) / cd;
-                    ca = anchor2.X - anchor1.X;
-                    cb = anchor2.Y - anchor1.Y;
-                    cc = 0.5f * ((anchor1.Range * anchor1.Range - anchor3.Range * anchor3.Range) - (anchor1.X * anchor1.X - anchor3.X * anchor3.X) - (anchor1.Y * anchor1.Y - anchor3.Y * anchor3.Y));
-                    cd = anchor3.X - anchor1.X;
-                    ce = anchor3.Y - anchor1.Y;
-                    cf = 0.5f * ((anchor1.Range * anchor1.Range - anchor2.Range * anchor2.Range) - (anchor1.X * anchor1.X - anchor2.X * anchor2.X) - (anchor1.Y * anchor1.Y - anchor2.Y * anchor2.Y));
-                    cg = cb * cd - ce * ca;
-                    if (cg == 0) y2 = 0;
-                    else y2 = (cf * cd - cc * ca) / cg;
-                    if (cd == 0) x2 = 0;
-                    else x2 = (cc - y2 * ce) / cd;
-                    ca = anchor3.X - anchor1.X;
-                    cb = anchor3.Y - anchor1.Y;
-                    cc = 0.5f * ((anchor1.Range * anchor1.Range - anchor2.Range * anchor2.Range) - (anchor1.X * anchor1.X - anchor2.X * anchor2.X) - (anchor1.Y * anchor1.Y - anchor2.Y * anchor2.Y));
-                    cd = anchor2.X - anchor1.X;
-                    ce = anchor2.Y - anchor1.Y;
-                    cf = 0.5f * ((anchor1.Range * anchor1.Range - anchor3.Range * anchor3.Range) - (anchor1.X * anchor1.X - anchor3.X * anchor3.X) - (anchor1.Y * anchor1.Y - anchor3.Y * anchor3.Y));
-                    cg = cb * cd - ce * ca;
-                    if (cg == 0) y3 = 0;
-                    else y3 = (cf * cd - cc * ca) / cg;
-                    if (cd == 0) x3 = 0;
-                    else x3 = (cc - y3 * ce) / cd;
-
-                    myTag.X = (myTag.Avg.X * 3 + x + x3) / 5;
-                    myTag.Y = (myTag.Avg.Y * 3 + y + y3) / 5;
-                    Thread.Sleep(50);
-                }
-                else Thread.Sleep(100);
-
-                // update old positions no matter the new range received or not 
-                for (int j = myTag_Old_X.Length - 1; j >= 1; j--)
-                {
-                    myTag_Old_X[i] = myTag_Old_X[i - 1];
-                    myTag_Old_Y[i] = myTag_Old_Y[i - 1];
-                }
-                myTag_Old_X[0] = myTag.X;
-                myTag_Old_Y[0] = myTag.Y;
+                x = x + x1;
+                y = y + y1;
+                count++;
             }
-        }
-
-        private void cal_move(object state)
-        {
-            // coefficient
-            Single[] k = new Single[5] { 20f, 5f, 5f, 0f, 0f };
-            Single max_turn = 70;
-
-            int max_speed = 95;
-            int[] ref_range = new int[2] { 20, 20 };
-            bool turn_1m, turn_2m;
-            int target_range;
-            int target_now;
-            Single diff_dist;
-            Single diff_angle;
-            Single vector_cross;
-            Single unit_cross;
-            Single unit_dot;
-            Single scalar_robot;
-            Single scalar_target;
-            Single tmpSingle1, tmpSingle2;
-            struct_PointF vector_old;
-            struct_PointF vector_now;
-
-            turn_1m = false;
-            turn_2m = false;
-            target_now = 1;
-            unit_cross = 0;
-            unit_dot = 0;
-            myCommand.arrived = false;
-
-            // other variables
-            myCommand.var1 = target[target_now].Theta;
-            myCommand.var2 = target_now;
-            //Toby's patch
-            cal_turn(target[target_now].Theta);
-            cal_turn(target[target_now].Theta);
-            forward_only(1);
-            //fwr.Write("[cal_move]forward_only done!!!" + "\r\n");
-            //Log.Debug("Brian", "[cal_move]forward_only done!!!");
-            //fwr.Write("[cal_move]myFlag.moving=" + myFlag.moving + "\r\n");
-
-            //Log.Debug("Brian", "[cal_move]myFlag.moving=" + myFlag.moving);
-
-            while (myFlag.moving)
+            if (v2)
             {
-                // define tolarence range
-                //Toby's patch
-                if (target_now < target_total) target_range = ref_range[1];
-                else target_range = ref_range[0];
-                //Toby's end
-
-                // check obstacles
-                ob.save_sensor_reading(myVehicle.sonic);
-#if OBSTACLE
-                //Brian+: 2015/03/25 Disable sonic for test
-                if (ob.HasObstacle && !myCommand.arrived)
-                {
-                    ob.avoid(myCommand.turn);
-                    myCommand.speed = ob.OutSpeed;
-                    myCommand.turn = ob.OutTurn;
-                }
-                else 
-#endif
-                if (myFlag.sampling)
-                {
-                    myFlag.sampling = false;
-                    #region diff_dist & diff_angle
-                    // calculate distance difference and check if arrived to the target
-                    diff_dist = (Single)Math.Sqrt((target[target_now].X - myTag.Avg.X) * (target[target_now].X - myTag.Avg.X) + (target[target_now].Y - myTag.Avg.Y) * (target[target_now].Y - myTag.Avg.Y));
-                    if (diff_dist < target_range) myCommand.arrived = true;
-
-                    // calculate angle difference
-                    diff_angle = (Single)(Math.Atan2((target[target_now].Y - myTag.Avg.Y), (target[target_now].X - myTag.Avg.X)) * 180f / 3.14f) + cfg.MapEast - myVehicle.compass;
-                    if (diff_angle > 180) diff_angle = diff_angle - 360;
-                    else if (diff_angle < -180) diff_angle = diff_angle + 360;
-                    #endregion
-
-                    #region determine the speed of the vehicle (for reference)
-                    if (diff_dist < target_range)      // if arrived the target
-                    {
-                        myCommand.speed = 0;
-                        myCommand.turn = 0;
-                        myCommand.arrived = true;
-                    }
-                    //Toby's patch
-                    else if (diff_dist < 150)    // if pretty close to the target
-                    {
-                        myCommand.speed = (int)(30 + diff_dist * (max_speed - 30) / 150f);
-                        myCommand.arrived = false;
-                        max_turn = 100;
-                    }
-                    //Toby's end
-                    else                        // ordinary situation
-                    {
-                        myCommand.speed = max_speed;
-                        myCommand.arrived = false;
-                        max_turn = 60; //Toby's patch
-                    }
-
-                    #endregion
-
-                    if (diff_dist < 200 && diff_dist > 100)
-                    {
-                        #region if need to calibrate the bearings
-                        if ((diff_angle > 10 || diff_angle < -10) && !turn_2m)
-                        {
-                            turn_2m = true;
-                            cal_turn((Single)(Math.Atan2((target[target_now].Y - myTag.Avg.Y), (target[target_now].X - myTag.Avg.X)) * 180f / 3.14f) + cfg.MapEast);
-                        }
-                        #endregion
-                    }
-                    else if (diff_dist < 100)
-                    {
-                        #region if need to calibrate the bearings
-                        if ((diff_angle > 10 || diff_angle < -10) && !turn_1m)
-                        {
-                            turn_1m = true;
-                            cal_turn((Single)(Math.Atan2((target[target_now].Y - myTag.Avg.Y), (target[target_now].X - myTag.Avg.X)) * 180f / 3.14f) + cfg.MapEast);
-                        }
-                        #endregion
-                    }
-                    else
-                    {
-                        #region determine the turn of the vehicle
-                        tmpSingle1 = (Single)Math.Sqrt((myTag.Avg.X - previous_step.X) * (myTag.Avg.X - previous_step.X) + (myTag.Avg.Y - previous_step.Y) * (myTag.Avg.Y - previous_step.Y));
-                        if (tmpSingle1 < 10)
-                        {
-                            // distance is too short, keep going but reduce turn angle
-                            tmpSingle2 = myCommand.turn * 0.8f;
-                            myCommand.turn = (int)tmpSingle2;
-                        }
-                        else
-                        {
-                            // calculate the two vectors and corresponding unit scalar
-                            vector_old.X = myTag.Avg.X - previous_step.X;
-                            vector_old.Y = myTag.Avg.Y - previous_step.Y;
-                            vector_now.X = target[target_now].X - myTag.Avg.X;
-                            vector_now.Y = target[target_now].Y - myTag.Avg.Y;
-                            vector_cross = vector_old.X * vector_now.Y - vector_old.Y * vector_now.X;
-                            scalar_robot = (Single)Math.Sqrt(vector_old.X * vector_old.X + vector_old.Y * vector_old.Y);
-                            scalar_target = (Single)Math.Sqrt(vector_now.X * vector_now.X + vector_now.Y * vector_now.Y);
-                            unit_cross = vector_cross / scalar_target / scalar_robot; //Toby's patch
-                            unit_dot = (vector_old.X * vector_now.X + vector_old.Y * vector_now.Y) / scalar_robot / scalar_target;
-                            if (unit_cross > 1) unit_cross = 1;
-                            else if (unit_cross < -1) unit_cross = -1;
-                            if (unit_dot > 1) unit_dot = 1;
-                            else if (unit_dot < -1) unit_dot = -1;
-
-                            if (unit_dot < 0)
-                            {
-                                if (unit_cross < 0) unit_cross = -1;
-                                else unit_cross = 1;
-                            }
-
-                            // update previous error
-                            for (int i = 4; i >= 1; i--)
-                            {
-                                err[i] = err[i - 1];
-                            }
-                            err[0] = unit_cross;
-
-                            // calculate totoal error
-                            tmpSingle1 = 0;
-                            for (int i = 0; i <= 4; i++)
-                            {
-                                tmpSingle1 = tmpSingle1 + err[i] * k[i];
-                            }
-                            //if (tmpSingle1 > k_total) tmpSingle1 = k_total;
-                            //else if (tmpSingle1 < k_total * -1) tmpSingle1 = k_total * -1f;
-
-                            // calculate turn
-                            //Toby's patch
-                            myCommand.turn = (int)(myCommand.turn + tmpSingle1);
-                            if (myCommand.turn > max_turn) myCommand.turn = (int)max_turn;
-                            else if (myCommand.turn < max_turn * -1) myCommand.turn = (int)(max_turn * -1);
-
-                            if (err[0] < 0.1 && err[0] > -0.1)
-                            {
-                                if (err[1] < 0.1 && err[1] > -0.1) myCommand.turn = 0;
-                            }
-                            //Toby's end
-
-                            // update previous step
-                            previous_step.X = myTag.Avg.X;
-                            previous_step.Y = myTag.Avg.Y;
-                        }
-                        #endregion
-                    }
-
-                }
-                #region arrived the target or any waypoint
-                if (myCommand.arrived)
-                {
-                    myCommand.arrived = false;
-                    turn_1m = false;
-                    turn_2m = false;
-
-                    if (target_now < target_total)
-                    {
-                        target_now++;
-                        for (i = 0; i <= 2; i++)
-                        {
-                            Thread.Sleep(500);
-                            cal_turn(target[target_now].Theta);
-                        }
-                        forward_only(1);
-                    }
-                    else
-                    {
-                        myFlag.moving = false;
-                        target_total = 0;
-                        target_now = 1;
-                        
-                        //Brian+ 2015/04/27: Send finish msg when robot reach target
-                        //Send end to send coordinate message 
-                        var reach_msg = new Matrix.Xmpp.Client.Message
-                        {
-                            Type = Matrix.Xmpp.MessageType.Chat,
-                            To = strTargetName,
-                            Body = "semiauto end"
-                            //To = "rdc02@ea-xmppserver",
-                            //Body = "Hello World!"
-
-                        };
-                        xmppClient.Send(reach_msg);
-
-                    }
-                }
-                #endregion
-                // at last, output the command
-
-                OutCommand(myCommand);
-                Thread.Sleep(90);
-                //fwr.Write("[cal_move]block3 entered!!" + "\r\n");
+                x = x + x2;
+                y = y + y2;
+                count++;
             }
-        }
-
-        private void cal_turn(Single TargetTheta)
-        {
-            Single diff_angle;
-
-            Thread.Sleep(500);
-
-            diff_angle = TargetTheta - myVehicle.compass;
-            if (diff_angle > 180) diff_angle = diff_angle - 360;
-            else if (diff_angle < -180) diff_angle = diff_angle + 360;
-            while (diff_angle > 10 || diff_angle < -10)
+            if (v3)
             {
-                diff_angle = TargetTheta - myVehicle.compass;
-                if (diff_angle > 180) diff_angle = diff_angle - 360;
-                else if (diff_angle < -180) diff_angle = diff_angle + 360;
-
-                myCommand.turn = (int)diff_angle;
-                if (myCommand.turn > 90) myCommand.turn = 90;
-                else if (myCommand.turn < -90) myCommand.turn = -90;
-                else if (myCommand.turn > 0 && myCommand.turn < 15) diff_angle = 15;
-                else if (myCommand.turn < 0 && myCommand.turn > -15) diff_angle = -15;
-
-
-                myCommand.speed = 0;
-                myCommand.vehicle_turnning = true;
-                myCommand.vehicle_done = false;
-                OutCommand(myCommand);
-
-                Thread.Sleep(100);
+                x = x + x3;
+                y = y + y3;
+                count++;
             }
-        }
-
-        private void forward_only(int cycle)
-        {
-            if (cycle == 0) return;
-
-            for (int i = 0; i < cycle; i++)
+            if (count > 0)
             {
-                myCommand.speed = 80;
-                myCommand.turn = 0;
-                OutCommand(myCommand);
-                Thread.Sleep(100);
+                x = x / count;
+                y = y / count;
             }
-        }
-        private void backward_only(int cycle)
-        {
-            if (cycle == 0) return;
+            else return false;
 
-            for (int i = 0; i < cycle; i++)
+            myTag.X = x;
+            myTag.Y = y;
+            myTag.Avg.X = x;
+            myTag.Avg.Y = y;
+            for(count=0;count<myTag_Old_X.Length;count++)
             {
-                myCommand.speed = -60;
-                myCommand.turn = 0;
-                OutCommand(myCommand);
-                Thread.Sleep(100);
+                myTag_Old_X[count] = x;
+                myTag_Old_Y[count] = y;
             }
+            return true;
         }
 
         private void avg_stdev(out Single avg, out Single stdev, Single[] set)
@@ -2354,15 +1932,21 @@ namespace Trilateration_Android
                 }
                 stdev = (Single)Math.Sqrt(sum / len);
             }
-
+            
         }
 
         private void ControlOut(object sender, EventArgs e)
         {
+            string tmpString;
             byte[] outbyte = new byte[10];
-            short speed = TowardOneTarget.OutSpeed;
-            short turn = TowardOneTarget.OutTurn;
+            int outbytelen = 0;
+            short speed = TowardTargets.OutSpeed;
+            short turn = TowardTargets.OutTurn;
 
+            //Log.Debug("Brian", "turn=" + turn.ToString() +" sonic2=" + myVehicle.sonic[1].ToString());
+
+            tmpString = "cc " + TowardTargets.OutStr;
+            //Log.Debug("Brian", tmpString);
             if (speed == 0 && turn != 0)
             {
                 outbyte[0] = 0x53;
@@ -2389,40 +1973,6 @@ namespace Trilateration_Android
                 Uart2C.SendMsgUart(pic32_open, outbyte);
             }
         }
-
-        private void Dispatch()
-        {
-            Single arrive_range;
-
-            target_now = 1;
-            TowardOneTarget.NewTarget(target[target_now].X, target[target_now].Y, target[target_now].Theta, 20);
-            while (myFlag.moving)
-            {
-                if ((TowardOneTarget.Status & TowardOneTarget.e_status.Moving) > 0)
-                {
-                    Thread.Sleep(1);
-                }
-                else if ((TowardOneTarget.Status & TowardOneTarget.e_status.Arrived) > 0)
-                {
-                    Thread.Sleep(500);
-                    if (target_now == target_total)
-                    {
-                        target_total = 0;
-                        myFlag.moving = false;
-                    }
-                    else
-                    {
-                        target_now++;
-                        if (target_now == target_total) arrive_range = 20;
-                        else arrive_range = 20;
-                        TowardOneTarget.NewTarget(target[target_now].X, target[target_now].Y, target[target_now].Theta, arrive_range);
-                    }
-                }
-            }
-        }
-
-
-
     }
 
 
@@ -2430,7 +1980,7 @@ namespace Trilateration_Android
     {
         public event EventHandler<Canvas> OnDrawing;
         public event EventHandler<MotionEvent> OnTouching;
-
+        
         public DrawView(Context context)
             : base(context)
         {

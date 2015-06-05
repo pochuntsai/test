@@ -3,19 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Trilateration
+namespace Trilateration_Android
 {
     class obstacle
     {
-
+        
         // constant value
         private int d_max = 150;
         private int[] d_safe = new int[5] { 15, 30, 35, 30, 15 };
         private int d_danger = 15;
-        private int speed_normal = 25;
+        private int speed_normal = 35;
         private int sonic_number = 5;
         private Single kp = 0.8f;
-        private int [] ku = new int [5] {3, 14, 16, 14, 3}; //32
+        private int[] ku = new int[5] { 3, 14, 16, 14, 3 }; 
 
         // need to know at the beginning
         private int turn_max;
@@ -31,15 +31,19 @@ namespace Trilateration
         private int speed;
         private int turn;
         private Single u;
-        private Single tmpSingle;
+        private Single tmpSingle1,tmpSingle2;
 
         // flags
         private bool hasObstacle;
+        private bool hasObstacle_old;
+        private bool inCorridor;
+        private bool escaped;
         private bool right;
         private bool left;
         private bool stop;
 
         // public variables
+        public string OutStr;
         public int OutSpeed
         {
             get {
@@ -60,14 +64,18 @@ namespace Trilateration
         {
             get { return hasObstacle; }
         }
+        public bool InCorridor
+        {
+            get { return inCorridor; }
+        }
+        public bool Escaped
+        {
+            get { return escaped; }
+        }
         public Single Control
         {
             get { return u; }
         }
-
-        public int Nearest;
-        public int Old0, Old1, Old2, Old3, Old4;
-        public Single Var1,Var2,Var3,Var4;
 
         /// <summary>
         /// To create an object from this class
@@ -79,6 +87,8 @@ namespace Trilateration
             turn_max = var1;
             cycle_interval = var2;
             hasObstacle = false;
+            hasObstacle_old = false;
+            escaped = false;
             stop = false;
             u = 0;
             turn = 0;
@@ -101,21 +111,46 @@ namespace Trilateration
         /// <param name="readings">The number of elements in the array has to be same as setting</param>
         public void save_sensor_reading(byte[] readings)
         {
-            hasObstacle = false;
+            // update old and new sonic ranges
             for (i = 0; i < sonic_number; i++)
             {
                 sonic_old[i] = sonic[i];
                 sonic[i] = (int)readings[i];
-                if (sonic[i] < d_safe[i]) hasObstacle = true;
+            }
+
+            // update old hasObstacle situation
+            hasObstacle_old = hasObstacle;
+
+            // normal detection for obstacle 
+            hasObstacle = false;
+            escaped = false;
+            for (i = 0; i < sonic_number; i++)
+            {
+                if (sonic[i] < d_safe[i])
+                {
+                    hasObstacle = true;
+                }
 
                 cost[i] = (Single)sonic[i] / d_safe[i];
                 if (cost[i] > 1) cost[i] = 1;
             }
-            Old0 = sonic_old[0];
-            Old1 = sonic_old[1];
-            Old2 = sonic_old[2];
-            Old3 = sonic_old[3];
-            Old4 = sonic_old[4];
+            if (sonic[0] < d_safe[0] && sonic[2] > d_safe[2] && sonic[0] > sonic_old[0])
+            {
+                hasObstacle = false;
+            }
+            else if (sonic[4] < d_safe[4] && sonic[2] > d_safe[2] && sonic[4] > sonic_old[4])
+            {
+                hasObstacle = false;
+            }
+
+            // escape from obstacle
+            escaped = (hasObstacle_old == true && hasObstacle == false);
+
+            if(!hasObstacle)
+            {
+                //inCorridor = (sonic[0] < 40 && sonic[4] < 40);
+                inCorridor = false;
+            }
         }
 
         /// <summary>
@@ -127,7 +162,7 @@ namespace Trilateration
             int index_nearest;
             Single ss;
             Single cost_R, cost_L;
-
+            
             turn = origin_turn;
 
             // calculate the cost of right and left
@@ -144,8 +179,8 @@ namespace Trilateration
             }
 
 
-            d_delta = (Single)(5)*((sonic[index_nearest] - sonic_old[index_nearest]) / cycle_interval) / (d_safe[index_nearest] / cycle_interval);
-            err_delta = 5f * (d_safe[index_nearest] - sonic[index_nearest]) / d_safe[index_nearest];
+            d_delta = (Single)(2)*((sonic[index_nearest] - sonic_old[index_nearest]) / cycle_interval) / (d_safe[index_nearest] / cycle_interval);
+            err_delta = 4f * (d_safe[index_nearest] - sonic[index_nearest]) / d_safe[index_nearest];
             ss = kp * (err_delta + d_delta);
             
             if (cost_L >= cost_R)
@@ -163,14 +198,23 @@ namespace Trilateration
                 speed = speed_normal;
             }
             u = Fuzzy(ss);
-            tmpSingle = turn + u * 5f * ku[index_nearest];
-            turn = (int)tmpSingle;
+            tmpSingle1 = turn + u * -5f * ku[index_nearest];
+            turn = (int)tmpSingle1;
+            
+        }
+        public void KeepStraight(int origin_turn)
+        {
+            int maxturn = 40;
+            Single[] k = new Single[2] { 0.6f, 0.4f };
+            Single total;
 
-            Nearest = index_nearest;
-            Var1 = d_delta;
-            Var2 = err_delta;
-            Var3 = ss;
-            Var4 = u;
+            tmpSingle1 = sonic[4] - sonic[0];
+            tmpSingle2 = sonic_old[4] - sonic_old[0];
+            total = tmpSingle1 * k[0] + tmpSingle2 * k[1];
+            turn = (int)(total + origin_turn);
+            if (turn > maxturn) turn = maxturn;
+            else if (turn < maxturn * -1) turn = maxturn * -1;
+            OutStr = sonic[4].ToString() + "," + sonic[0].ToString() + "," + total.ToString("f1");
         }
 
         private Single Fuzzy(Single input)
@@ -184,9 +228,9 @@ namespace Trilateration
             if (input >= P) output = -1;
             else if ((input < P) && (input > Z)) output = -1f * Math.Abs(input);
             else if ((input < Z) && (input > N)) output = Math.Abs(input);
-            else if (input <= N) output = 1;
+            else if (input < N) output = 1;
             else output = 0;
-            if (left == true) output = -1f * (output);
+            if (left== true) output = -1f * (output);
             return output;
         }
     }

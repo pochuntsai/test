@@ -18,10 +18,8 @@ namespace Trilateration_Android
         public ushort MapHeight;
         public ushort GridWidth;
         public ushort GridHeight;
-        //public ushort ControlInv;
         public ushort MaxSpeed;
         public short MapEast;
-
     }
 
     public struct move_command
@@ -47,26 +45,54 @@ namespace Trilateration_Android
                 if (value < -360) p_compass = value + 360;
                 else if (value > 360) p_compass = value - 360;
                 else p_compass = value;
-                
-                /*
-                if (value >= 0 && value <= 360)
-                {
-                    p_compass = value;
-                }
-                */ 
             }
         }
-        public short encoderL;
-        public short encoderR;
-        public byte[] sonic = new byte[5];
+        public short East;
+        public byte[] sonic = new byte[7];
         public byte Bumper;
-
+		public Single V;
+		public Single W;
+		
         public class_Vehicle()
         {
-            compass = 0f;
-            encoderL = 0;
-            encoderR = 0;
+            p_compass = 0f;
+            East = 0;
         }
+		
+		public void UpdatedAll(byte[] Raw)
+		{
+			short tmpShort;
+
+			tmpShort = (short)((Raw[1] << 8) + Raw[2]);
+			tmpShort = (short)(tmpShort - East);
+			if (tmpShort < -180) tmpShort = (short)(tmpShort + 360);
+			else if (tmpShort > 180) tmpShort = (short)(tmpShort - 360);
+			if (tmpShort < 360 && tmpShort > -360)
+			{
+                if(p_compass>-160 && p_compass<160)
+                {
+                    if((p_compass-tmpShort)>20)
+                    {
+                        p_compass = p_compass - 20;
+                    }
+                    else if((p_compass - tmpShort) < -20)
+                    {
+                        p_compass = p_compass + 20;
+                    }
+                    else p_compass = tmpShort;
+                }
+				else p_compass = tmpShort;
+			}
+            tmpShort = (short)((Raw[3] << 8) + Raw[4]);
+            V = tmpShort / 100f;
+            tmpShort = (short)((Raw[5] << 8) + Raw[6]);
+            W = tmpShort;
+			for (int i = 0; i < 7; i++)
+			{
+				sonic[i] = Raw[7 + i];
+			}
+			Bumper = Raw[14];
+		}
     }
 
     public struct struct_PointF
@@ -76,12 +102,21 @@ namespace Trilateration_Android
         public Single Theta;
     }
 
+    //Brian+ for auto mode struct
+    public struct struct_AutoTarget
+    {
+        public int X;
+        public int Y;
+        public int StopTime;
+    }
+
     public struct struct_Location
     {
         public int X;
         public int Y;
         public string Note;
     }
+	
     //Toby's patch
     public class class_iteration
     {
@@ -106,7 +141,6 @@ namespace Trilateration_Android
         public bool loc_on;
         public bool moving;
         public bool testing;
-        public bool sampling;
         public bool screen_ready;
         public int loc_init_step;
 
@@ -122,18 +156,19 @@ namespace Trilateration_Android
 
     public class beacon
     {
-        private int rate;
+        private short rate;
+        private Single p_range;
 
-        public bool Updated;
+        //public bool Updated;
         //Toby's patch
-        public int PixelX;
-        public int PixelY;
+        //public int PixelX;
+        //public int PixelY;
         public Single X;
         public Single Y;
         public Single Z;
-        public Single Range;
-        public Single RangeOld;
-        public int Rate
+        public Single Range=0;
+		public short RateSum=0;
+        public short Rate
         {
             get { return rate; }
             set
@@ -146,6 +181,36 @@ namespace Trilateration_Android
         public double SampleTime;
         public string Message;
         public struct_PointF Avg = new struct_PointF();
+
+        public bool SaveMeasure(int Measurement,Single MaxMove)
+        {
+            Single thisMove;
+
+            if (Measurement <= 0) return false;
+
+            if (RateSum <= 0)
+            {
+                p_range = (Single)Measurement;
+            }
+            else
+            {
+                MaxMove = MaxMove / RateSum;
+                thisMove = (Single)(Measurement - Range);
+                if (thisMove > MaxMove) p_range = Range + MaxMove;
+                else if (thisMove < -1 * MaxMove) p_range = Range - MaxMove;
+                else p_range = (Single)Measurement;
+            }
+
+            if (p_range <= 0)
+            {
+                return false;
+            }
+            else
+            {
+                Range = p_range;
+                return true;
+            }
+        }
     }
 
 }

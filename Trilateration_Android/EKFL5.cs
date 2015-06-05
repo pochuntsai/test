@@ -23,7 +23,7 @@ namespace Trilateration
         }
 
         // constant variables
-        private int dim = 5;
+        private int dim = 6;
 
         // private variables
         private int i, j, k;      
@@ -39,23 +39,23 @@ namespace Trilateration
 
         // required
         private anchor[] An;
-        private int encoder_l, encoder_r;
+        private Single v, w;
 
         // output
         private position tag;
         private position tag_old;
         private string out_val1;
 
-        public int EncoderL
+        public Single Velocity
         {
-            get { return encoder_l; }
-            set { encoder_l = value; }
+            get { return v; }
+            set { v = value; }
         }
 
-        public int EncoderR
+        public Single Omega
         {
-            get { return encoder_r; }
-            set { encoder_r = value; }
+            get { return w; }
+            set { w = value; }
         }
 
         public Single dT
@@ -139,12 +139,12 @@ namespace Trilateration
             }
             
             R = new Single[dim, dim];
-            Q = new Single[2, 2]{{5f,0f},{0f,5f}};  // 0.01
+            Q = new Single[2, 2]{{3f,0f},{0f,3f}};
             for (i = 0; i < dim; i++)
             {
                 for (j = 0; j < dim; j++)
                 {
-                    if (i == j) R[i,j] = 10f;  // 0.3
+                    if (i == j) R[i,j] = 20f;
                     else R[i,j] = 0f;
                 }
             }
@@ -158,22 +158,42 @@ namespace Trilateration
 
             ResetVariables();
             tag_old = tag;
-
+            Trilateration_Android.MainActivity.wr.WriteLine("tag_old.X=" + tag_old.X );
             // state equation
-            StateEquation(out d_move.X, out d_move.Y, out d_move.Theta, encoder_l, encoder_r);
+            StateEquation(out d_move.X, out d_move.Y, out d_move.Theta);
             Xke[0, 0] = tag_old.X + d_move.X;
             Xke[1, 0] = tag_old.Y + d_move.Y;
             Xke[2, 0] = tag_old.Theta + d_move.Theta;
-            
+
+            Trilateration_Android.MainActivity.wr.WriteLine("tag_old.X=" + tag_old.X);
             // calculate measurement Z, estimate h(X) and its Jocobian H
             for (i = 0; i < dim; i++)
             {
-                Z[i,0] = (Single)Math.Sqrt(Math.Pow(An[i].Range, 2) - Math.Pow(An[i].Z, 2));        // ranging value project to 2D plane
+                Trilateration_Android.MainActivity.wr.WriteLine("tag_old.X=" + tag_old.X);
+                Z[i,0] = (Single)Math.Sqrt(Math.Abs(Math.Pow(An[i].Range, 2) - Math.Pow(An[i].Z, 2)));        // ranging value project to 2D plane
                 if (An[i].Range > 0)
                 {
-                    hX[i, 0] = (Single)Math.Sqrt(Math.Pow((tag_old.X - An[i].X), 2) + Math.Pow((tag_old.Y - An[i].Y), 2));    // distance between previous tag and the anchor
+                    hX[i, 0] = (Single)Math.Sqrt(Math.Pow((tag_old.X - An[i].X), 2) + Math.Pow((tag_old.Y - An[i].Y), 2)+9);    // distance between previous tag and the anchor
+                    if (float.IsNaN((hX[i, 0])))
+                    {
+                        Trilateration_Android.MainActivity.wr.WriteLine("hX[i, 0]=" + hX[i, 0] );
+                        Trilateration_Android.MainActivity.wr.WriteLine("tag_old.X=" + tag_old.X + " An[i].X=" + An[i].X);
+                        Trilateration_Android.MainActivity.wr.WriteLine("tag_old.Y=" + tag_old.Y + " An[i].Y=" + An[i].Y);
+                    }
                     H[i, 0] = (tag_old.X - An[i].X) / hX[i, 0];
+                    if (float.IsNaN((H[i, 0])))
+                    {
+                        Trilateration_Android.MainActivity.wr.WriteLine("H[i, 0]=" +  H[i, 0]);
+                        Trilateration_Android.MainActivity.wr.WriteLine("tag_old.X=" + tag_old.X + " An[i].X=" + An[i].X);
+                        Trilateration_Android.MainActivity.wr.WriteLine("hX[i, 0]=" + hX[i, 0]);
+                    }
                     H[i, 1] = (tag_old.Y - An[i].Y) / hX[i, 0];
+                    if (float.IsNaN((H[i, 1])))
+                    {
+                        Trilateration_Android.MainActivity.wr.WriteLine("H[i, 1]=" + H[i, 1]);
+                        Trilateration_Android.MainActivity.wr.WriteLine("tag_old.Y=" + tag_old.Y + " An[i].Y=" + An[i].Y);
+                        Trilateration_Android.MainActivity.wr.WriteLine("hX[i, 0]=" + hX[i, 0]);
+                    }
                 }
                 else
                 {
@@ -351,23 +371,16 @@ namespace Trilateration
             }
         }
 
-        private void StateEquation(out Single dx, out Single dy, out Single dtheta, int left, int right)
+        private void StateEquation(out Single dx, out Single dy, out Single dtheta)
         {
             Single DegToRad =(Single)(Math.PI/180);
             Single RadToDeg =(Single)(180/Math.PI);
             Single D = 11.83f;
             Single piD = (Single)(D * Math.PI);
-            Single VL, VR;
-            Single V, W;
 
-            VL = (((left / 12 / 60) * piD) / dt);
-            VR = (((right / 12 / 60) * piD) / dt);
-            V = (VL + VR) / 2f;
-            W = (VL - VR) / 22.26f;
-
-            dtheta = W * dt * RadToDeg;
-            dx = (Single)((V * dt) * Math.Cos(dtheta * DegToRad));
-            dy = (Single)((V * dt) * Math.Sin(dtheta * DegToRad));
+            dtheta = w * dt * RadToDeg;
+            dx = (Single)((v * dt) * Math.Cos(dtheta * DegToRad));
+            dy = (Single)((v * dt) * Math.Sin(dtheta * DegToRad));
         }
 
         private void ResetVariables()

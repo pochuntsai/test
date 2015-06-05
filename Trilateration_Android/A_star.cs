@@ -79,9 +79,13 @@ namespace Trilateration
         private List<int> HIndex = new List<int>(); //這個點 到 目標點 的 成本
         private List<short> ParentIndex = new List<short>(); //這個點 的 父親的編號 
         private List<short> Heading = new List<short>();
+	private List<short> FIndex = new List<short>();
+
         public List<Point> path_Result = new List<Point>(); //Result
         public List<Point> path_Detail = new List<Point>();
         public static List<propertiesList> NodeList = new List<propertiesList>();
+        
+
         /// <summary>
         /// To creat objects first of all
         /// </summary>
@@ -111,20 +115,24 @@ namespace Trilateration
         {
             path_Result.Clear();
             if (robot.X < 0 || robot.Y < 0) return false;
-            if (robot.X > 99 || robot.Y > 99) return false;
+            if (robot.X > Grid_W - 1 || robot.Y > Grid_H -1) return false;
             if (goal.X < 0 || goal.Y < 0) return false;
-            if (goal.X > 99 || goal.Y > 99) return false;
-            Start = (short)(robot.X + Grid_H * robot.Y);
-            Target = (short)(goal.X + Grid_H * goal.Y);
+            if (goal.X > Grid_W - 1 || goal.Y > Grid_H - 1)  return false;
+            Start = (short)(robot.X + Grid_W * robot.Y);
+            Target = (short)(goal.X + Grid_W * goal.Y);
+            if (Walkability[NodeList[Target].Row, NodeList[Target].Column] > 0)
+                if (findT(goal) == false)
+                    return false;
             Autoflag = AutoPlan();
             //check 
-            if (Autoflag == true) if (Walkability[NodeList[Start].Row, NodeList[Start].Column] > 0) find(robot);
-            return true;
+            if (Autoflag == true) if (Walkability[NodeList[Start].Row, NodeList[Start].Column] > 0)
+                    if (find(robot) == false)return false;
+                        return true;
         }
         /// <summary>
         /// Read only, if robot position fall over gray region 
         /// </summary>
-        private void find(Point robot)
+        private bool find(Point robot)
         {
             bool myflag = true;
             double Angle = 0;
@@ -145,10 +153,53 @@ namespace Trilateration
                     Angle = (double)(i * 15 * Math.PI / 180);
                     Y = (short)(R * Math.Sin(Angle));
                     X = (short)(R * Math.Cos(Angle));
-                    Start = (short)(X + robot.X + Grid_H * (robot.Y + Y));
+                    Start = (short)(X + robot.X + Grid_W * (robot.Y + Y));
                 }
                 R++;
                 Angle = 0;
+            }
+            if (myflag == true)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+        private bool findT(Point goal)
+        {
+            bool myflag = true;
+            double Angle = 0;
+            ushort R = 1;
+            short X, Y;
+            Point P;
+            while ((R < 10) && (myflag != false))
+            {
+                for (int i = 0; Angle < 2 * Math.PI; i++)
+                {
+                    if (Walkability[NodeList[Target].Row, NodeList[Target].Column] == 0)
+                    {
+                        P = new Point(NodeList[Target].Row, NodeList[Target].Column);
+                        path_Result.Add(P);
+                        myflag = false;
+                        break;
+                    }
+                    Angle = (double)(i * 15 * Math.PI / 180);
+                    Y = (short)(R * Math.Sin(Angle));
+                    X = (short)(R * Math.Cos(Angle));
+                    Start = (short)(X + goal.X + Grid_W * (goal.Y + Y));
+                }
+                R++;
+                Angle = 0;
+            }
+            if (myflag == true)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
             }
         }
         /// <summary>
@@ -208,29 +259,9 @@ namespace Trilateration
         /// </summary>
         private void DeletePoint()
         {
-            double D = 3.5;
-            int k = 0;
             if (Autoflag == true)
             {
-                while (k < path_Result.Count - 1)
-                {
-                    if (Math.Sqrt(Math.Pow(path_Result[k].X - path_Result[k + 1].X, 2) + Math.Pow(path_Result[k].Y - path_Result[k + 1].Y, 2)) <= D)
-                    {
-                        if ((path_Result[k + 1].X != NodeList[Target].Row) || (path_Result[k + 1].Y != NodeList[Target].Column))
-                        {
-                            path_Result.Remove(path_Result[k + 1]);
-                            k--;
-                        }
-                        else
-                        {
-                            if ((path_Result[k].X == NodeList[Target].Row) || (path_Result[k].Y == NodeList[Target].Column))
-                            {
-                                path_Result.Remove(path_Result[k]);
-                            }
-                        }
-                    }
-                    k++;
-                }
+              WayPtDelete();
             }
             else
             {
@@ -349,7 +380,7 @@ namespace Trilateration
                         if (i == previous_heading)
                             GIndex[NodeList[k].Neighbor[i]] = GIndex[k] + 10; // 臨邊
                         else
-                            GIndex[NodeList[k].Neighbor[i]] = GIndex[k] + 14; // 斜邊
+                            GIndex[NodeList[k].Neighbor[i]] = GIndex[k] + 30; // 斜邊
                         HIndex[NodeList[k].Neighbor[i]] = 10 * (Math.Abs(NodeList[Target].Row - NodeList[neighbor].Row) +
                             Math.Abs(NodeList[Target].Column - NodeList[neighbor].Column));
                     }
@@ -491,6 +522,114 @@ namespace Trilateration
             }
                 path_Result.Add(target);
                 return false;            
+        }
+        private void WayPtDelete()
+        {
+            short DDStart, DDTarget, myTarget;
+            bool checkflag = false;
+            DDStart = Start;
+            DDTarget = (short)(path_Result[0].X + Grid_W * path_Result[0].Y);
+            myTarget = (short)(path_Result[path_Result.Count - 1].X + Grid_W * path_Result[path_Result.Count - 1].Y);
+            while (checkflag != true)
+            {
+                if (WayPt(DDStart, DDTarget) == true)
+                {
+                    FIndex.Add(DDTarget);
+                    if (FIndex[FIndex.Count - 1] == myTarget)
+                    {
+                        FIndex.RemoveAt(FIndex.Count - 1);
+                        if (FIndex.Count != 0)
+                        {
+                            WayPtRM();
+                        }
+                        else
+                        {
+                            checkflag = true;
+                        }
+                        continue;
+                    }
+                    NewTarget(ref DDTarget, myTarget, ref checkflag);
+                }
+                else
+                {
+                    if ((FIndex.Count == 0) && (DDTarget == myTarget)) { 
+                        checkflag = true;
+                        continue;
+                    }
+                    if (FIndex.Count == 0)
+                    {
+                        DDStart = DDTarget;
+                        NewTarget(ref DDTarget, myTarget, ref checkflag);
+                        continue;
+                    }
+                    DDStart = FIndex[FIndex.Count - 1];
+                    FIndex.RemoveAt(FIndex.Count - 1);
+                    if (FIndex.Count == 0) continue;
+                    WayPtRM();
+                }
+            }
+        }
+        private bool WayPt(short DDStart, short DDTarget)
+        {
+            int unitD = 1, S, C;
+            int D = (int)Math.Sqrt(Math.Pow(NodeList[DDTarget].Row - NodeList[DDStart].Row, 2) + Math.Pow(NodeList[DDTarget].Column - NodeList[DDStart].Column, 2));
+            Point start = new Point(NodeList[DDStart].Row, NodeList[DDStart].Column);
+            Point target = new Point(NodeList[DDTarget].Row, NodeList[DDTarget].Column);
+            Single slope = -Slope(target, start, 58);
+            while (unitD < D)
+            {
+                S = (int)(unitD * Math.Sin(StoA(target, start, slope)));
+                C = (int)(unitD * Math.Cos(StoA(target, start, slope)));
+                if (Walkability[NodeList[DDStart].Row + C, NodeList[DDStart].Column - S] == 1)
+                {
+                    return false;
+                }
+                else if ((Walkability[NodeList[DDStart].Row + C, NodeList[DDStart].Column - S] <= 0) & (unitD > D))
+                {
+                    return true;
+                }
+                unitD++;
+            }
+            return true;
+        }
+        private void WayPtRM()
+        {
+            short n = 0;
+            for (int k = 0; k < path_Result.Count; k++)
+            {
+                if ((path_Result[k].X == NodeList[FIndex[n]].Row) && (path_Result[k].Y == NodeList[FIndex[n]].Column))
+                {
+                    path_Result.RemoveAt(k);
+                    k--;
+                    n++;
+                    if (n >= FIndex.Count)
+                    {
+                        break;
+                    }
+                }
+            }
+            FIndex.Clear();
+        }
+        private void NewTarget(ref short DDTarget, short myTarget, ref bool checkflag)
+        {
+            short pastDDTarget = 0, D = 3, DD = 0;
+            for (int i = 0; i < path_Result.Count - 1; i++)
+            {
+                if (DDTarget == (short)(path_Result[i].X + Grid_W * path_Result[i].Y))
+                {
+                    pastDDTarget = DDTarget;
+                    DDTarget = (short)(path_Result[i + 1].X + Grid_W * path_Result[i + 1].Y);
+                    break;
+                }
+            }
+            if (DDTarget == myTarget)
+            {
+                DD = (short)Math.Sqrt(Math.Pow(NodeList[DDTarget].Row - NodeList[pastDDTarget].Row, 2) + Math.Pow(NodeList[DDTarget].Column - NodeList[pastDDTarget].Column, 2));
+                if (((NodeList[pastDDTarget].Row == NodeList[DDTarget].Row) | (NodeList[pastDDTarget].Column == NodeList[DDTarget].Column)) && (DD > D))
+                    FIndex.RemoveAt(FIndex.Count - 1); //store
+                if (FIndex.Count != 0) WayPtRM();
+                checkflag = true;
+            }
         }
         /// <summary>
         /// Show indicative point on UI 

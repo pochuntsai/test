@@ -61,7 +61,7 @@ namespace Trilateration
         /// </summary>
         public bool Preprocess()
         {
-            int safety_x = 2;   // width of safety range        
+            int safety_x = 3;   // width of safety range        
             int safety_y = 3;   // height of safety range
             bool restore_new_map = true;    // if need to restore the walkable map
 

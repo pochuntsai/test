@@ -24,21 +24,28 @@ namespace Trilateration
         }
 
         private static short max_speed = 95;
-        private static short max_turn;
+        private static short max_turn = 45;
         private static e_status status;
         private static short speed, turn;
         private static s_position target;
         private static Single target_range;
         private static obstacle ob = new obstacle(80, 0.1f);
 
+        //private static Single[] OAbuff = new Single[5];
+        //private static short OAcount;
+        //private static Single OA;
+
         private static HighPerformanceCounter hpcounter1 = new HighPerformanceCounter();
 
         // Input
         public static s_position Pose;
         public static bool StopVehicle;
+        public static bool PureMove;
         public static class_Vehicle Vehicle = new class_Vehicle();
 
         // Output
+        public static string OutStr;
+
         public static e_status Status
         {
             get{return status;}
@@ -52,11 +59,16 @@ namespace Trilateration
             get { return turn; }
         }
 
+        public static short Counter;
+
         // Declare event
         public static event ControlOutputEventHandler ControlEvent;
 
         public static void Start()
         {
+            StopVehicle = false;
+            PureMove = false;
+            Counter = 0;
             Thread mainloop = new Thread(new ThreadStart(MainLoop));
             mainloop.IsBackground = true;
             mainloop.Start();
@@ -80,35 +92,82 @@ namespace Trilateration
 
         private static void MainLoop()
         {
-            Single[] k = new Single[5] { 30f, 10f, 5f, 0f, 0f };
+            Single[] k = new Single[2] { 0.85f, 0.4f };
 
             Single diff_dist;
             Single diff_angle;
             Single tmpSingle1, tmpSingle2;
             Single Vcross;
-            Single Sr, St;
-            Single Ucross, Udot;
+            double deviation, deviation_old, d_deviation;
+            double a, b;
+            double tmpDouble1, tmpDouble2;
             int tmpInt;
             s_position Pose_old;
             s_position Vt;
             s_position Vr;
-            Single[] err = new Single[5];
+            short back_count = 0;
+            short lock_count = 0;
+            short hit_count = 0;
+            short mark_count = 0;
 
             status = e_status.None;
             Pose_old.X = Pose.X;
             Pose_old.Y = Pose.Y;
+            deviation = 0;
+            deviation_old = 0;
             while (true)
             {
-                hpcounter1.Start();
-                if (StopVehicle) goto Wait;
 
+                hpcounter1.Start();
+
+                #region Check status
+                if (Vehicle.Bumper == 0xFF)
+                {
+                    hit_count++;
+                    back_count = 20;
+                }
+
+                ob.save_sensor_reading(Vehicle.sonic);
+                //if (ob.HasObstacle) status = status | e_status.HasObstacle;
+                //else status = status & e_status.NoObstacle;
+                #endregion
+
+                #region Mode 1 : Force stop
+                if (StopVehicle) goto Wait;
+                #endregion
+
+                #region Mode 2 : Move forward
+                if(PureMove)
+                {
+                    if(back_count>0)
+                    {
+                        back_count--;
+                        hit_count = 0;
+                        speed = -30;
+                        turn = 0;
+                    }
+                    else if(ob.HasObstacle)
+                    {
+                        ob.avoid(turn,0);
+                        speed = (short)ob.OutSpeed;
+                        turn = (short)ob.OutTurn;
+                    }
+                    else
+                    {
+                        speed = 60;
+                        turn = 0;
+                    }
+                    if (ControlEvent != null) ControlEvent(null, EventArgs.Empty);
+                    goto Wait;
+                }
+                #endregion
+
+                #region Mode 3 : Move to target
                 if (status == e_status.HasTask)
                 {
                     #region Get a new task, need to initial
-                    for (tmpInt = 0; tmpInt < err.Length; tmpInt++)
-                    {
-                        err[tmpInt] = 0;
-                    }
+                    hit_count = 0;
+                    back_count = 0;
                     MakeTurn(target.Theta);
                     MakeTurn(target.Theta);
                     ForwardOnly(1);
@@ -128,35 +187,66 @@ namespace Trilateration
                     else if (diff_angle < -180) diff_angle = diff_angle + 360;
                     #endregion
 
-                    #region check obstacles
-                    //Brian+: Disble obstacle for test
-#if OBSTACLE                   
-                    //ob.save_sensor_reading(Vehicle.sonic);
-                    //if (ob.HasObstacle) status = status | e_status.HasObstacle;
-                    //else status = status & e_status.NoObstacle;
-#else                    
-                    status = status & e_status.NoObstacle;
-#endif
-                    #endregion
-
                     if ((status & e_status.Arrived)>0)
                     {
                         speed = 0;
                         turn = 0;
                         status = status & e_status.NoMoving;
                     }
-                    else if ((status & e_status.HasObstacle) > 0)
+                    else if (back_count > 0)
                     {
-                        ob.avoid(turn);
+                        back_count--;
+                        if (hit_count == 1)
+                        {
+                            if (back_count == 0)
+                            {
+                                hit_count++;
+                            }
+                            else
+                            {
+                                speed = -35;
+                                turn = 0;
+                            }
+                        }
+                        else
+                        {
+                            if (back_count == 1)
+                            {
+                                if (diff_angle >= 0) MakeTurn(Pose.Theta + 90);
+                                else MakeTurn(Pose.Theta - 90);
+                            }
+                            else if (back_count == 0)
+                            {
+                                ForwardOnly(12);
+                                hit_count = 0;
+                            }
+                            else
+                            {
+                                speed = -35;
+                                turn = 0;
+                            }
+                        }
+                        Pose_old.X = Pose.X;
+                        Pose_old.Y = Pose.Y;
+                    }
+                    else if (ob.HasObstacle)
+                    {
+                        lock_count = 50;
+                        ob.avoid(turn,diff_angle);
                         speed = (short)ob.OutSpeed;
                         turn = (short)ob.OutTurn;
+                        Pose_old.X = Pose.X;
+                        Pose_old.Y = Pose.Y;
                     }
                     else
                     {
+                        if (lock_count > 0) lock_count--;
+
                         #region determine the speed of the vehicle (for reference)
                         if (diff_dist < 150)    // if pretty close to the target
                         {
                             speed = (short)(40 + diff_dist * (max_speed - 40) / 150f);
+							if(speed<15) speed = 15;
                             max_turn = 100;
                         }
                         else                        // ordinary situation
@@ -165,11 +255,13 @@ namespace Trilateration
                         }
                         #endregion
 
-                        if (diff_dist < 200 && (diff_angle > 30 || diff_angle < -30))
+                        if (lock_count == 0 && diff_dist < 150 && (diff_angle > 30 || diff_angle < -30))
                         {
                             #region if need to calibrate the bearings
-                            Thread.Sleep(500);
+                            Thread.Sleep(100);
                             MakeTurn((Single)(Math.Atan2((target.Y - Pose.Y), (target.X - Pose.X)) * 180f / 3.14f));
+                            Pose_old.X = Pose.X;
+                            Pose_old.Y = Pose.Y;
                             #endregion
                         }
                         else
@@ -184,66 +276,50 @@ namespace Trilateration
                             }
                             else
                             {
-                                // calculate the two vectors and corresponding unit scalar
+                                // calculate the cross of the two vectors 
                                 Vr.X = Pose.X - Pose_old.X;
                                 Vr.Y = Pose.Y - Pose_old.Y;
                                 Vt.X = target.X - Pose.X;
                                 Vt.Y = target.Y - Pose.Y;
                                 Vcross = Vr.X * Vt.Y - Vr.Y * Vt.X;
-                                Sr = (Single)Math.Sqrt(Vr.X * Vr.X + Vr.Y * Vr.Y);
-                                St = (Single)Math.Sqrt(Vt.X * Vt.X + Vt.Y * Vt.Y);
-                                if (Sr == 0 || St == 0)
+                                
+                                // calculate deviation between the vehicle and the given path
+                                if ((target.X - Pose_old.X) > -1 && (target.X - Pose_old.X) < 1)
                                 {
-                                    Ucross = 0;
-                                    Udot = 0;
+                                    a = 0;
+                                    b = target.Y;
                                 }
                                 else
                                 {
-                                    Ucross = Vcross / St / Sr;
-                                    Udot = (Vr.X * Vt.X + Vr.Y * Vt.Y) / Sr / St;
+                                    a = (target.Y - Pose_old.Y) / (target.X - Pose_old.X);
+                                    b = (target.Y * Pose_old.X - Pose_old.Y * target.X) / (Pose_old.X - target.X);
                                 }
-                                if (Ucross > 1) Ucross = 1;
-                                else if (Ucross < -1) Ucross = -1;
-                                if (Udot > 1) Udot = 1;
-                                else if (Udot < -1) Udot = -1;
+                                deviation = Math.Abs(a * Pose.X - Pose.Y + b) / Math.Sqrt(a * a + 1);
+                                if (deviation > 20) deviation = 20;
+                                else if (deviation < -20) deviation = -20;
 
-                                if (Udot < 0)
-                                {
-                                    if (Ucross < 0) Ucross = -1;
-                                    else Ucross = 1;
-                                }
-
-                                // decide max turn
-                                if (Ucross > 0.5 || Ucross < -0.5) max_turn = 70;
-                                else max_turn = 60;
-
-                                // update previous error
-                                for (int i = 4; i >= 1; i--)
-                                {
-                                    err[i] = err[i - 1];
-                                }
-                                err[0] = Ucross;
-
-                                // calculate totoal error
-                                tmpSingle1 = 0;
-                                for (int i = 0; i <= 4; i++)
-                                {
-                                    tmpSingle1 = tmpSingle1 + err[i] * k[i];
-                                }
+                                // calculate compensation
+                                d_deviation = deviation - deviation_old;
+                                tmpDouble2 = deviation * k[0] + d_deviation * k[1];
+                                if (Vcross < 0) tmpDouble2 = tmpDouble2 * -1;
+                                //if (Vcross < 0 && tmpDouble2 > 5) turn = -50;
+                                //else if (Vcross > 0 && tmpDouble2 > 5) turn = 50;
+                                //else turn = 0;
 
                                 // calculate turn
-                                turn = (short)(turn + tmpSingle1);
+                                turn = (short)(turn + tmpDouble2);
                                 if (turn > max_turn) turn = (short)max_turn;
                                 else if (turn < max_turn * -1) turn = (short)(max_turn * -1);
 
-                                if (err[0] < 0.1 && err[0] > -0.1)
+                                OutStr = a.ToString("f2") + " , " + b.ToString("f2") + " , " + deviation.ToString("f2") + " , " + tmpDouble2.ToString("f2") + " , " + turn.ToString();
+                                deviation_old = deviation;
+                                if (mark_count >= 3)
                                 {
-                                    if (err[1] < 0.1 && err[1] > -0.1) turn = 0;
+                                    mark_count = 0;
+                                    Pose_old.X = Pose.X;
+                                    Pose_old.Y = Pose.Y;
                                 }
-
-                                // update previous step
-                                Pose_old.X = Pose.X;
-                                Pose_old.Y = Pose.Y;
+                                else mark_count++;
                             }
                             #endregion
                         }
@@ -254,6 +330,7 @@ namespace Trilateration
                     goto Wait;
 
                 }
+                #endregion
 
             Wait:
                 hpcounter1.Stop();
@@ -268,24 +345,23 @@ namespace Trilateration
 
         private static void MakeTurn(Single TargetAngle)
         {
-            Single diff_angle;
-            do
+            Single diff_angle=10;
+
+            while (diff_angle > 5 || diff_angle < -5)
             {
                 diff_angle = TargetAngle - Pose.Theta;
                 if (diff_angle > 180) diff_angle = diff_angle - 360;
                 else if (diff_angle < -180) diff_angle = diff_angle + 360;
 
                 turn = (short)diff_angle;
-                if (turn > 90)turn = 90;
-                else if (turn < -90) turn = -90;
-                else if (turn > 0 && turn < 15) diff_angle = 15;
-                else if (turn < 0 && turn > -15) diff_angle = -15;
+                if (turn > 0 && turn < 15) turn = 15;
+                else if (turn < 0 && turn > -15) turn = -15;
                 speed = 0;
 
                 if (ControlEvent != null) ControlEvent(null, EventArgs.Empty);
                 Thread.Sleep(100);
 
-            } while (diff_angle > 5 || diff_angle < -5);
+            }
         }
 
         private static void ForwardOnly(int cycle)
@@ -300,5 +376,6 @@ namespace Trilateration
                 Thread.Sleep(100);
             }
         }
+
     }
 }
